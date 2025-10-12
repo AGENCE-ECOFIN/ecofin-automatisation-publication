@@ -1,8 +1,10 @@
 version: '3.8'
 
 services:
-  postgres:
+  # Base de données PostgreSQL
+  db:
     image: postgres:15
+    container_name: ecofin_db_local
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
@@ -16,9 +18,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ecofin-network
 
+  # Redis pour Celery
   redis:
     image: redis:7-alpine
+    container_name: ecofin_redis_local
     ports:
       - "6379:6379"
     volumes:
@@ -28,8 +34,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+    networks:
+      - ecofin-network
 
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  ecofin-network:
+    driver: bridge
