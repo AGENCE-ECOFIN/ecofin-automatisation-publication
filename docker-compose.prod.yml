@@ -46,6 +46,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "8000:8000"
     environment:
       # Database
       DATABASE_URL: postgresql://${POSTGRES_USER:-ecofin_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-ecofin_publication}
@@ -140,6 +142,8 @@ services:
     image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-frontend:preprod
     container_name: ecofin-frontend-preprod
     restart: always
+    ports:
+      - "80:80"
     depends_on:
       - backend
     networks:
