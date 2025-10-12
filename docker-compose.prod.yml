@@ -143,6 +143,8 @@ services:
     image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-frontend:preprod
     container_name: ecofin-frontend-preprod
     restart: always
+    ports:
+      - "80:80"
     depends_on:
       - backend
     ports:
