@@ -37,6 +37,10 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application code
 COPY --chown=appuser:appuser . .
 
+# Copy entrypoint script
+COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Create logs directory with correct permissions
 RUN mkdir -p /app/logs && \
     chown -R appuser:appuser /app/logs && \
@@ -51,6 +55,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Expose port
 EXPOSE 8000
+
+# Use entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Start application with gunicorn (logs to stdout/stderr for Docker)
 CMD ["gunicorn", "app.main:app", \
