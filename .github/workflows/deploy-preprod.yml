@@ -1,0 +1,188 @@
+name: 🚀 Deploy to Preprod
+
+on:
+  push:
+    branches:
+      - preprod
+  workflow_dispatch:
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  build-and-push-backend:
+    name: 🐳 Build & Push Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: 🏗️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🔐 Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+      
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-backend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=preprod
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/preprod' }}
+      
+      - name: 🚀 Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-backend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-backend:buildcache,mode=max
+          platforms: linux/amd64
+
+  build-and-push-frontend:
+    name: 🎨 Build & Push Frontend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: 🏗️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: 🔐 Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+      
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-frontend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=preprod
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/preprod' }}
+      
+      - name: 🚀 Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-frontend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-frontend:buildcache,mode=max
+          platforms: linux/amd64
+          build-args: |
+            REACT_APP_API_URL=${{ secrets.REACT_APP_API_URL_PREPROD }}
+
+  deploy-to-vps:
+    name: 🌐 Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: [build-and-push-backend, build-and-push-frontend]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔐 Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: 📝 Add VPS to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_IP_PREPROD }} >> ~/.ssh/known_hosts
+      
+      - name: 📦 Create deployment package
+        run: |
+          mkdir -p deploy
+          cp docker-compose.prod.yml deploy/docker-compose.yml
+          cp -r deployment/* deploy/ 2>/dev/null || true
+      
+      - name: 📤 Upload files to VPS
+        run: |
+          ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_IP_PREPROD }} "mkdir -p ~/ecofin-publication-preprod"
+          scp -r deploy/* ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_IP_PREPROD }}:~/ecofin-publication-preprod/
+      
+      - name: 🚀 Deploy on VPS
+        run: |
+          ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_IP_PREPROD }} << 'ENDSSH'
+            cd ~/ecofin-publication-preprod
+            
+            # Pull latest images
+            docker-compose pull
+            
+            # Stop and remove old containers
+            docker-compose down
+            
+            # Start new containers
+            docker-compose up -d
+            
+            # Clean up old images
+            docker image prune -af
+            
+            # Wait for services to be healthy
+            echo "⏳ Waiting for services to start..."
+            sleep 10
+            
+            # Check status
+            docker-compose ps
+            
+            echo "✅ Deployment completed!"
+          ENDSSH
+      
+      - name: 🧹 Cleanup deployment files
+        if: always()
+        run: rm -rf deploy
+      
+      - name: 📊 Deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** Preprod" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image:** ${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-backend:preprod" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image:** ${{ secrets.DOCKER_HUB_USERNAME }}/ecofin-publication-frontend:preprod" >> $GITHUB_STEP_SUMMARY
+          echo "- **VPS:** ${{ secrets.VPS_IP_PREPROD }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed at:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: 📢 Notify Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy-to-vps]
+    if: always()
+    
+    steps:
+      - name: 📬 Notification
+        run: |
+          if [ "${{ needs.deploy-to-vps.result }}" == "success" ]; then
+            echo "✅ Deployment to preprod successful!"
+          else
+            echo "❌ Deployment to preprod failed!"
+            exit 1
+          fi
+

@@ -1,0 +1,64 @@
+{
+  "linkedin": [
+    {
+      "accountId": "7297",
+      "accountName": "Tiemoko Souahamai Thierry HEMA",
+      "platform": "linkedin",
+      "pages": []
+    }
+  ],
+  "facebook": [
+    {
+      "accountId": "11315",
+      "accountName": "Thierry Hema",
+      "platform": "facebook",
+      "pages": [
+        {
+          "pageId": "722025697671791",
+          "pageName": "Testecofin"
+        },
+        {
+          "pageId": "1982525425350969",
+          "pageName": "TogoFirst"
+        },
+        {
+          "pageId": "699228396610721",
+          "pageName": "Business in Cameroon"
+        },
+        {
+          "pageId": "422596914561484",
+          "pageName": "Le Nouveau Gabon"
+        },
+        {
+          "pageId": "357981874064861",
+          "pageName": "Bankable.RDC"
+        },
+        {
+          "pageId": "327853160887584",
+          "pageName": "Stopblablacam"
+        },
+        {
+          "pageId": "176474232405004",
+          "pageName": "EcofinAgency"
+        },
+        {
+          "pageId": "159362754122831",
+          "pageName": "AgenceEcofin"
+        },
+        {
+          "pageId": "100382081966656",
+          "pageName": "AEcofin Redaction"
+        }
+      ]
+    }
+  ],
+  "x": [
+    {
+      "accountId": "8067",
+      "accountName": "@agenceecofin",
+      "platform": "x",
+      "pages": []
+    }
+  ],
+  "last_updated": "2025-10-11T21:50:00Z"
+}
