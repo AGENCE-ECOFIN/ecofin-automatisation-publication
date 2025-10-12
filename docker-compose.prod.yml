@@ -123,7 +123,7 @@ services:
     image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:preprod
     container_name: ecofin-celery-beat-preprod
     restart: always
-    command: celery -A app.workers.celery_app beat --loglevel=info
+    command: celery -A app.workers.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     depends_on:
       - backend
       - redis
@@ -134,6 +134,7 @@ services:
       BLOTATO_API_KEY: ${BLOTATO_API_KEY}
     volumes:
       - ./logs:/app/logs
+      - celery_beat_data:/tmp
     networks:
       - ecofin-network
 
@@ -146,6 +147,8 @@ services:
       - "80:80"
     depends_on:
       - backend
+    ports:
+      - "80:80"
     networks:
       - ecofin-network
     healthcheck:
@@ -168,5 +171,7 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  celery_beat_data:
     driver: local
 

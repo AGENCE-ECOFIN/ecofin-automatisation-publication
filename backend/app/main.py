@@ -8,6 +8,11 @@ from app.core.database import engine
 from app.models import user, feed, post, publication
 from app.models import network_config
 from app.models.publication_queue import PublicationQueue
+import logging
+
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Créer les tables
 user.Base.metadata.create_all(bind=engine)
@@ -18,10 +23,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configuration CORS
+@app.on_event("startup")
+async def startup_event():
+    """Initialisation au démarrage de l'application"""
+    try:
+        logger.info("🚀 Démarrage de l'application...")
+        
+        # Initialiser la base de données (créer les réseaux par défaut)
+        from app.init_db import init_database
+        init_database()
+        
+        logger.info("✅ Application démarrée avec succès!")
+    except Exception as e:
+        logger.error(f"❌ Erreur lors du démarrage: {e}")
+        # Ne pas bloquer le démarrage si l'initialisation échoue
+        pass
+
+# Configuration CORS - Autoriser tous les origins en production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # React dev server
+    allow_origins=["*"],  # Permet tous les origins (dev + prod)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
