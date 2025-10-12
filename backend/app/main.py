@@ -26,18 +26,12 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     """Initialisation au démarrage de l'application"""
-    try:
-        logger.info("🚀 Démarrage de l'application...")
-        
-        # Initialiser la base de données (créer les réseaux par défaut)
-        from app.init_db import init_database
-        init_database()
-        
-        logger.info("✅ Application démarrée avec succès!")
-    except Exception as e:
-        logger.error(f"❌ Erreur lors du démarrage: {e}")
-        # Ne pas bloquer le démarrage si l'initialisation échoue
-        pass
+    logger.info("✅ Application FastAPI démarrée!")
+    logger.info(f"📡 API URL: {app.title} v{app.version}")
+    logger.info(f"📚 Documentation: /docs")
+    
+    # L'initialisation DB est déjà faite par entrypoint.sh
+    # On ne le refait pas ici pour éviter les doublons
 
 # Configuration CORS - Autoriser tous les origins en production
 app.add_middleware(
