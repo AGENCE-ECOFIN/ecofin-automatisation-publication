@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+celerybeat-schedule.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (pas nécessaire dans l'image)
+*.md
+docs/
+
+# Alembic (migrations déjà appliquées)
+alembic.ini
+
+# Scripts de test
+test_*.py
+get_*.py
+migrate_*.py
+reset_*.py
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+

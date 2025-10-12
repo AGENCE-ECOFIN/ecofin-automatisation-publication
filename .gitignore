@@ -4,28 +4,21 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+*.egg-info/
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
 venv/
-ENV/
 env/
+ENV/
 .venv
 
-# IDEs
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -33,57 +26,78 @@ env/
 *~
 .DS_Store
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+celerybeat-schedule
 celerybeat-schedule.db
 
-# Logs
-*.log
-logs/
+# Environment Variables
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
 
-# Testing
+# Tests
 .pytest_cache/
 .coverage
 htmlcov/
-.tox/
+coverage/
+.nyc_output/
 
-# Node / React
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnp
 .pnp.js
-coverage/
-build/
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
-# Docker
-docker-compose.override.yml
-
-# Alembic
-alembic/versions/__pycache__/
-
-# Temporary files
-*.tmp
-*.bak
-*.swp
-.cache/
+# Production builds
+frontend/build/
+frontend/dist/
+backend/build/
+backend/dist/
 
 # OS
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
 
-# Backup files
-*.backup
-backup*.sql
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Editor backups
+*~
+\#*\#
+.\#*
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Coverage
+.coverage
+htmlcov/
