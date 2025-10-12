@@ -1,26 +1,41 @@
 #!/bin/bash
+set -e
 
 # Entrypoint script pour le backend en production
 
-echo "🚀 Démarrage du backend EcoFin Publication..."
+echo ""
+echo "================================================================"
+echo "🚀 Démarrage du backend EcoFin Publication"
+echo "================================================================"
+echo ""
 
-# Attendre que PostgreSQL soit prêt (attente simple)
-echo "⏳ Attente de PostgreSQL (15 secondes)..."
-sleep 15
-echo "✅ PostgreSQL devrait être prêt!"
-
-# Exécuter les migrations Alembic
-echo "🔄 Application des migrations..."
 cd /app
-alembic upgrade head 2>&1 || echo "⚠️  Migrations déjà appliquées ou erreur"
+
+# 1. Initialiser la base de données (attend PostgreSQL automatiquement)
+echo "📝 Initialisation de la base de données..."
+python -m app.init_db
+if [ $? -ne 0 ]; then
+    echo "❌ Erreur lors de l'initialisation de la base de données"
+    exit 1
+fi
+
+# 2. Exécuter les migrations Alembic
+echo ""
+echo "🔄 Application des migrations Alembic..."
+alembic upgrade head 2>&1 || echo "⚠️  Migrations déjà appliquées"
 echo "✅ Migrations terminées!"
 
-# Initialiser la base de données (créer l'admin)
-echo "📝 Tentative de création de l'admin..."
-python /app/create_admin.py 2>&1 || echo "⚠️  Admin déjà existant ou erreur"
-echo "✅ Initialisation terminée!"
+# 3. Créer l'utilisateur admin par défaut
+echo ""
+echo "👤 Création de l'utilisateur admin..."
+python /app/create_admin.py 2>&1 || echo "⚠️  Admin déjà existant"
 
-# Démarrer l'application
-echo "🚀 Lancement de l'application..."
+# 4. Démarrer l'application
+echo ""
+echo "================================================================"
+echo "✅ Initialisation complète - Démarrage de l'application..."
+echo "================================================================"
+echo ""
+
 exec "$@"
 
