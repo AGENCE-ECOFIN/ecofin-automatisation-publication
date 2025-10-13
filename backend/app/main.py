@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-from app.api import auth, feeds, posts, test_generation, tasks, networks, users
+from app.api import auth, feeds, posts, test_generation, tasks, networks, users, upload
 from app.api import publication_queue as publication_queue_api
 from app.api import unified_publication, blotato_accounts, direct_post
+from fastapi.staticfiles import StaticFiles
 from app.core.database import engine
 from app.models import user, feed, post, publication
 from app.models import network_config
@@ -42,6 +43,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Créer le dossier uploads s'il n'existe pas
+import os
+os.makedirs("uploads/images", exist_ok=True)
+
+# Servir les fichiers statiques (images uploadées)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # Inclure les routes
 app.include_router(auth.router)
 app.include_router(feeds.router)
@@ -55,6 +63,7 @@ app.include_router(unified_publication.router, tags=["unified-publication"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(blotato_accounts.router, tags=["blotato-accounts"])
 app.include_router(direct_post.router, tags=["direct-post"])
+app.include_router(upload.router, tags=["upload"])
 
 
 @app.get("/")

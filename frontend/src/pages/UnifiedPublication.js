@@ -4,7 +4,7 @@ import { FaClock, FaPlay, FaPause, FaCheck, FaTimes, FaPlus, FaGlobe, FaImage, F
 import { FaFacebook, FaLinkedin, FaTwitter } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { postsService, publicationQueueService, networksService, api } from '../services/api';
+import { postsService, publicationQueueService, networksService, feedsService, api } from '../services/api';
 import SocialNetworkIcon from '../components/SocialNetworkIcon';
 
 const UnifiedPublication = () => {
@@ -106,7 +106,7 @@ const UnifiedPublication = () => {
   });
 
   // Récupération des flux pour les filtres
-  const { data: feedsData } = useQuery('feeds', () => postsService.getFeeds());
+  const { data: feedsData } = useQuery('feeds', feedsService.getFeeds);
   const feeds = feedsData?.data || [];
 
 
@@ -135,61 +135,79 @@ const UnifiedPublication = () => {
 
   const handlePauseItem = (itemId) => {
     if (window.confirm('⏸️ Voulez-vous mettre cette publication en pause ?')) {
-      pauseItemMutation.mutate(itemId);
+    pauseItemMutation.mutate(itemId);
     }
   };
 
   const handleResumeItem = (itemId) => {
     if (window.confirm('▶️ Voulez-vous reprendre cette publication ?')) {
-      resumeItemMutation.mutate(itemId);
+    resumeItemMutation.mutate(itemId);
     }
   };
 
-  // Calculer le temps restant avant publication
+  // Calculer le temps restant avant publication avec secondes qui défilent
   const getTimeRemaining = (scheduledAt) => {
     if (!scheduledAt) return null;
     
     const now = new Date();
     const scheduled = new Date(scheduledAt);
     const diffMs = scheduled - now;
-    const diffMinutes = Math.floor(diffMs / 60000);
+    const totalSeconds = Math.floor(diffMs / 1000);
     
-    if (diffMinutes < 0) {
+    // Si le temps est dépassé
+    if (totalSeconds < 0) {
       return { 
         text: 'Prêt à publier', 
-        class: 'text-green-600 font-bold', 
+        class: 'text-green-600 font-bold animate-pulse', 
         isPast: true,
-        isScheduled: true 
+        isScheduled: false 
       };
-    } else if (diffMinutes < 1) {
-      const diffSeconds = Math.floor(diffMs / 1000);
+    }
+    
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    // Programmé (≤ 10 minutes) - Afficher heures:minutes:secondes qui défilent
+    if (totalSeconds <= 600) {
+      let timeText;
+      if (hours > 0) {
+        timeText = `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+      } else if (minutes > 0) {
+        timeText = `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+      } else {
+        timeText = `${seconds}s`;
+      }
+      
       return { 
-        text: `${diffSeconds}s`, 
-        class: 'text-orange-600 font-bold', 
+        text: timeText,
+        class: 'text-blue-600 font-bold tabular-nums', 
         isPast: false,
         isScheduled: true 
       };
-    } else if (diffMinutes <= 10) {
-      // Moins de 10 minutes = PROGRAMMÉ (publication imminente)
+    }
+    
+    // En attente (> 10 minutes) - Pas besoin des secondes
+    if (totalSeconds < 3600) {
       return { 
-        text: `${diffMinutes}min`, 
-        class: 'text-blue-600', 
+        text: `${minutes}min`, 
+        class: 'text-yellow-600', 
         isPast: false,
-        isScheduled: true 
+        isScheduled: false 
       };
-    } else if (diffMinutes < 60) {
-      // Plus de 10 minutes = EN ATTENTE (dans la file)
+    } else if (totalSeconds < 86400) {
+      const timeText = minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
       return { 
-        text: `${diffMinutes}min`, 
+        text: timeText,
         class: 'text-yellow-600', 
         isPast: false,
         isScheduled: false 
       };
     } else {
-      const hours = Math.floor(diffMinutes / 60);
-      const mins = diffMinutes % 60;
+      const days = Math.floor(totalSeconds / 86400);
+      const remainingHours = Math.floor((totalSeconds % 86400) / 3600);
       return { 
-        text: `${hours}h${mins > 0 ? mins + 'min' : ''}`, 
+        text: `${days}j ${remainingHours}h`, 
         class: 'text-yellow-600', 
         isPast: false,
         isScheduled: false 
@@ -200,27 +218,51 @@ const UnifiedPublication = () => {
 
 
   const handlePauseAll = () => {
-    queueItems.forEach(item => {
-      if (item.status === 'PENDING' && !item.is_paused) {
+    // Pause uniquement les éléments filtrés
+    const filteredItems = getFilteredQueueItems();
+    const itemsToPause = filteredItems.filter(item => item.status === 'PENDING' && !item.is_paused);
+    
+    if (itemsToPause.length === 0) {
+      alert('Aucun élément à mettre en pause dans le filtre actuel');
+      return;
+    }
+    
+    if (window.confirm(`⏸️ Mettre en pause ${itemsToPause.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
+      itemsToPause.forEach(item => {
         pauseItemMutation.mutate(item.id);
-      }
-    });
+      });
+    }
   };
 
   const handleResumeAll = () => {
-    queueItems.forEach(item => {
-      if (item.status === 'PENDING' && item.is_paused) {
+    // Reprendre uniquement les éléments filtrés
+    const filteredItems = getFilteredQueueItems();
+    const itemsToResume = filteredItems.filter(item => item.status === 'PENDING' && item.is_paused);
+    
+    if (itemsToResume.length === 0) {
+      alert('Aucun élément en pause dans le filtre actuel');
+      return;
+    }
+    
+    if (window.confirm(`▶️ Reprendre ${itemsToResume.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
+      itemsToResume.forEach(item => {
         resumeItemMutation.mutate(item.id);
-      }
-    });
+      });
+    }
   };
 
   // Fonction de filtrage des éléments de la file d'attente
   const getFilteredQueueItems = () => {
     return queueItems.filter(item => {
       // Filtre par flux
-      if (feedFilter && item.feed_id !== parseInt(feedFilter)) {
-        return false;
+      if (feedFilter) {
+        if (feedFilter === 'direct') {
+          // Afficher uniquement les posts directs (feed_id NULL)
+          if (item.feed_id !== null) return false;
+        } else {
+          // Afficher uniquement ce flux spécifique
+          if (item.feed_id !== parseInt(feedFilter)) return false;
+        }
       }
       
       // Filtre par réseau
@@ -316,7 +358,7 @@ const UnifiedPublication = () => {
                 const timeInfo = getTimeRemaining(item.scheduled_at);
                 return timeInfo?.isScheduled;
               }).length}
-            </div>
+          </div>
             <div className="text-sm font-medium text-blue-600">📅 Programmés</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl border-2 border-yellow-200 shadow-sm hover:shadow-md transition-all duration-200">
@@ -326,7 +368,7 @@ const UnifiedPublication = () => {
                 const timeInfo = getTimeRemaining(item.scheduled_at);
                 return !timeInfo?.isScheduled;
               }).length}
-            </div>
+          </div>
             <div className="text-sm font-medium text-yellow-600">⏳ En attente</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200 shadow-sm hover:shadow-md transition-all duration-200">
@@ -352,17 +394,24 @@ const UnifiedPublication = () => {
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Filtres</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">Flux</label>
+              <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                🗂️ Flux / Type
+              </label>
               <select
                 id="feedFilter"
                 value={feedFilter}
                 onChange={(e) => setFeedFilter(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="">Tous les flux</option>
+                <option value="">📋 Tous les types</option>
+                <optgroup label="Type de post">
+                  <option value="direct">📤 Posts directs</option>
+                </optgroup>
+                <optgroup label="Flux RSS">
                 {feeds.map(feed => (
-                  <option key={feed.id} value={feed.id}>{feed.name}</option>
+                    <option key={feed.id} value={feed.id}>📰 {feed.name}</option>
                 ))}
+                </optgroup>
               </select>
             </div>
 
@@ -483,10 +532,16 @@ const UnifiedPublication = () => {
                   </td>
                   <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                     {item.is_paused ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                        <FaPause className="text-orange-500 mr-1" />
-                        <span className="hidden sm:inline">EN PAUSE</span>
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          <FaPause className="text-orange-500 mr-1" />
+                          <span className="hidden sm:inline">EN PAUSE</span>
+                    </span>
+                        {/* Pas de countdown si en pause */}
+                        <span className="text-xs mt-1 text-orange-600">
+                          ⏸️ Chrono arrêté
+                        </span>
+                      </div>
                     ) : item.status === 'PENDING' ? (
                       (() => {
                         const timeInfo = getTimeRemaining(item.scheduled_at);
@@ -604,7 +659,7 @@ const UnifiedPublication = () => {
               <FaTimes className="w-6 h-6" />
             </button>
           </div>
-        </div>
+          </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8">
@@ -628,13 +683,13 @@ const UnifiedPublication = () => {
                         <div className="w-12 h-12 flex items-center justify-center bg-gray-50 rounded-full">
                           <Icon style={{ color, fontSize: '24px' }} />
                         </div>
-                        <div>
+            <div>
                           <h3 className="text-lg font-bold text-gray-900">
                             {network.network === 'x' ? 'X (Twitter)' : network.network.charAt(0).toUpperCase() + network.network.slice(1)}
                           </h3>
                         </div>
                       </div>
-                    </div>
+            </div>
 
                     {/* Toggle */}
                     <div className="mb-6">
@@ -653,38 +708,38 @@ const UnifiedPublication = () => {
                             }`}
                           />
                         </button>
-                      </label>
-                    </div>
+                </label>
+              </div>
 
                     {/* Form */}
                     <div className="space-y-4">
-                      <div>
+              <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
                           ⏱️ Délai (min)
-                        </label>
-                        <input
-                          type="number"
+                </label>
+                <input
+                  type="number"
                           value={formData.default_publication_delay}
                           onChange={(e) => handleNetworkFormChange(network.id, 'default_publication_delay', e.target.value)}
                           min="1"
                           className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
+                />
+              </div>
 
-                      <div>
+              <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
                           📊 Max/jour
-                        </label>
-                        <input
+                </label>
+                <input
                           type="number"
                           value={formData.max_posts_per_day}
                           onChange={(e) => handleNetworkFormChange(network.id, 'max_posts_per_day', e.target.value)}
                           min="1"
                           className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         />
-                      </div>
+            </div>
 
-                      <button
+              <button
                         onClick={() => handleSaveNetwork(network.id)}
                         disabled={isSavingNetwork}
                         className="w-full mt-4 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold hover:shadow-lg disabled:opacity-50 transition-all"
@@ -700,8 +755,8 @@ const UnifiedPublication = () => {
                             Sauvegarder
                           </>
                         )}
-                      </button>
-                    </div>
+              </button>
+            </div>
                   </div>
                 </div>
               );
@@ -719,7 +774,10 @@ const UnifiedPublication = () => {
     targetPageId: '',
     useAI: false,
     generatedContent: '',
-    isGenerating: false
+    isGenerating: false,
+    imageFile: null,
+    imageUrl: '',
+    linkUrl: ''
   });
 
   const [blotatoAccounts, setBlotatoAccounts] = useState(null);
@@ -748,17 +806,28 @@ const UnifiedPublication = () => {
     setDirectPostData(prev => ({ ...prev, isGenerating: true }));
 
     try {
+      // Construire le contenu avec le lien si fourni
+      let contentToGenerate = directPostData.sourceContent;
+      if (directPostData.linkUrl) {
+        contentToGenerate += `\n\nLien: ${directPostData.linkUrl}`;
+      }
+
       // Utiliser le prompt personnalisé si fourni
       const customPrompt = directPostData.customPrompt || null;
 
       // Générer le contenu via l'API
       const response = await api.post('/test-generation', {
         network: directPostData.network,
-        content: directPostData.sourceContent,
+        content: contentToGenerate,
         custom_prompt: customPrompt
       });
 
-      const generated = response.data?.generated_content || directPostData.sourceContent;
+      let generated = response.data?.generated_content || directPostData.sourceContent;
+      
+      // Ajouter le lien à la fin si fourni (pour être sûr qu'il apparaît)
+      if (directPostData.linkUrl && !generated.includes(directPostData.linkUrl)) {
+        generated += `\n\n🔗 ${directPostData.linkUrl}`;
+      }
       
       setDirectPostData(prev => ({
         ...prev,
@@ -773,7 +842,7 @@ const UnifiedPublication = () => {
   };
 
   const handlePublishDirectPost = async () => {
-    const content = directPostData.generatedContent || directPostData.sourceContent;
+    let content = directPostData.generatedContent || directPostData.sourceContent;
     
     if (!content) {
       alert('⚠️ Veuillez saisir ou générer du contenu');
@@ -790,17 +859,58 @@ const UnifiedPublication = () => {
       return;
     }
 
-    if (window.confirm('📤 Publier ce post maintenant ?')) {
+    // Ajouter le lien à la fin du contenu si fourni et pas déjà présent
+    if (directPostData.linkUrl && !content.includes(directPostData.linkUrl)) {
+      content += `\n\n🔗 ${directPostData.linkUrl}`;
+    }
+
+    if (window.confirm('📤 Publier ce post IMMÉDIATEMENT (pas de file d\'attente) ?')) {
       try {
+        let mediaUrls = [];
+        
+        // Si une image a été uploadée, l'uploader d'abord
+        if (directPostData.imageFile) {
+          const formData = new FormData();
+          formData.append('file', directPostData.imageFile);
+          
+          try {
+            // Upload de l'image (vous devrez créer cet endpoint)
+            const uploadResponse = await api.post('/upload/image', formData, {
+              headers: {
+                'Content-Type': 'multipart/form-data'
+              }
+            });
+            
+            if (uploadResponse.data?.url) {
+              mediaUrls = [uploadResponse.data.url];
+            }
+          } catch (uploadError) {
+            console.error('❌ Erreur upload image:', uploadError);
+            // Continuer sans image si l'upload échoue
+            alert('⚠️ Impossible d\'uploader l\'image, publication sans image');
+          }
+        }
+        
         // Créer directement l'entrée dans PublicationQueue
         const response = await api.post('/direct-post/', {
           network: directPostData.network,
           content: content,
           target_page_id: directPostData.targetPageId,
-          media_urls: []
+          media_urls: mediaUrls
         });
 
-        showToast('✅ Post programmé avec succès !');
+        // Afficher l'URL de publication si disponible
+        if (response.data?.publication_url) {
+          alert(`✅ Post publié avec succès !\n\n🔗 Voir le post:\n${response.data.publication_url}`);
+        } else {
+          showToast('✅ Post publié avec succès !');
+        }
+        
+        // Nettoyer l'URL de l'image si créée
+        if (directPostData.imageUrl && directPostData.imageFile) {
+          URL.revokeObjectURL(directPostData.imageUrl);
+        }
+        
         setShowDirectPost(false);
         setDirectPostData({
           sourceContent: '',
@@ -809,9 +919,14 @@ const UnifiedPublication = () => {
           targetPageId: '',
           useAI: false,
           generatedContent: '',
-          isGenerating: false
+          isGenerating: false,
+          imageFile: null,
+          imageUrl: '',
+          linkUrl: ''
         });
-        queryClient.invalidateQueries('publication-queue');
+        
+        // Rafraîchir l'historique (pas la queue)
+        queryClient.invalidateQueries('history');
       } catch (error) {
         console.error('❌ Erreur:', error);
         alert(`❌ Erreur : ${error.response?.data?.detail || error.message}`);
@@ -862,24 +977,24 @@ const UnifiedPublication = () => {
                 <h2 className="text-2xl font-bold">Créer un post direct</h2>
                 <p className="text-indigo-100 mt-1">Publication immédiate sur un réseau social</p>
               </div>
-              <button
+            <button
                 onClick={() => setShowDirectPost(false)}
                 className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
-              >
-                <FaTimes className="w-6 h-6" />
-              </button>
-            </div>
-          </div>
+            >
+              <FaTimes className="w-6 h-6" />
+            </button>
+                  </div>
+                </div>
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {/* Réseau et Page */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Réseau */}
-              <div>
+                  <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">
                   🌐 Réseau social *
-                </label>
+                    </label>
                 <div className="space-y-2">
                   {['facebook', 'linkedin', 'x'].map(network => {
                     const NetworkIcon = network === 'facebook' ? FaFacebook : network === 'linkedin' ? FaLinkedin : FaTwitter;
@@ -893,7 +1008,7 @@ const UnifiedPublication = () => {
                           isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <input
+                    <input
                           type="radio"
                           value={network}
                           checked={isSelected}
@@ -906,14 +1021,14 @@ const UnifiedPublication = () => {
                       </label>
                     );
                   })}
-                </div>
-              </div>
+                  </div>
+                  </div>
 
               {/* Page de destination */}
-              <div>
+                  <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">
                   📄 Page de destination *
-                </label>
+                    </label>
                 {!blotatoAccounts ? (
                   <div className="flex items-center justify-center py-10 bg-gray-50 rounded-lg">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600 mr-2"></div>
@@ -943,12 +1058,95 @@ const UnifiedPublication = () => {
                   </>
                 )}
               </div>
-            </div>
+                  </div>
+
+            {/* Upload Image (optionnel) */}
+            <div className="p-6 bg-white rounded-xl shadow-sm border-2 border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
+                🖼️ Image (optionnel)
+              </h3>
+
+              <div className="space-y-4">
+                {/* Upload d'image */}
+                  <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    📸 Ajouter une image
+                    </label>
+                  
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <FaImage className="w-10 h-10 text-gray-400 mb-3" />
+                        <p className="mb-2 text-sm text-gray-500">
+                          <span className="font-semibold">Cliquez pour uploader</span> ou glissez-déposez
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG ou JPEG (max 10MB)</p>
+                      </div>
+                    <input
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            // Vérifier la taille (10MB max)
+                            if (file.size > 10 * 1024 * 1024) {
+                              alert('❌ Fichier trop volumineux (max 10MB)');
+                              return;
+                            }
+                            
+                            // Créer une URL locale pour l'aperçu
+                            const imageUrl = URL.createObjectURL(file);
+                            setDirectPostData(prev => ({ 
+                              ...prev, 
+                              imageFile: file,
+                              imageUrl: imageUrl 
+                            }));
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Aperçu de l'image uploadée */}
+                  {directPostData.imageUrl && (
+                    <div className="mt-3 relative">
+                      <img 
+                        src={directPostData.imageUrl} 
+                        alt="Aperçu" 
+                        className="w-full h-64 object-cover rounded-lg border-2 border-indigo-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (directPostData.imageUrl) {
+                            URL.revokeObjectURL(directPostData.imageUrl);
+                          }
+                          setDirectPostData(prev => ({ 
+                            ...prev, 
+                            imageFile: null,
+                            imageUrl: '' 
+                          }));
+                        }}
+                        className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                      >
+                        <FaTimes />
+                    </button>
+                      {directPostData.imageFile && (
+                        <div className="mt-2 text-sm text-gray-600">
+                          📎 {directPostData.imageFile.name} ({(directPostData.imageFile.size / 1024).toFixed(0)} KB)
+                  </div>
+                      )}
+                </div>
+                  )}
+              </div>
+          </div>
+        </div>
 
             {/* Mode de création */}
             <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200 rounded-xl p-6">
               <label className="flex items-center cursor-pointer mb-4">
-                <input
+                    <input
                   type="checkbox"
                   checked={directPostData.useAI}
                   onChange={(e) => setDirectPostData(prev => ({ ...prev, useAI: e.target.checked, generatedContent: '', sourceContent: '' }))}
@@ -976,7 +1174,7 @@ const UnifiedPublication = () => {
                     <p className="text-xs text-purple-600 mt-1">
                       Instructions pour l'IA sur comment transformer votre contenu
                     </p>
-                  </div>
+      </div>
 
                   {/* Contenu source */}
                   <div>
@@ -990,10 +1188,10 @@ const UnifiedPublication = () => {
                       rows={4}
                       placeholder="Texte de base que l'IA va transformer..."
                     />
-                  </div>
+    </div>
 
                   {/* Bouton générer */}
-                  <button
+            <button
                     type="button"
                     onClick={handleGenerateContent}
                     disabled={directPostData.isGenerating || !directPostData.sourceContent}
@@ -1009,28 +1207,28 @@ const UnifiedPublication = () => {
                         ✨ Générer le contenu avec l'IA
                       </>
                     )}
-                  </button>
+            </button>
 
                   {/* Résultat généré */}
                   {directPostData.generatedContent && (
                     <div className="mt-4 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
                       <label className="block text-sm font-bold text-green-900 mb-2">
                         ✅ Contenu généré (éditable)
-                      </label>
+                    </label>
                       <textarea
                         value={directPostData.generatedContent}
                         onChange={(e) => setDirectPostData(prev => ({ ...prev, generatedContent: e.target.value }))}
                         className="w-full p-4 border-2 border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
                         rows={6}
-                      />
-                    </div>
+                    />
+                  </div>
                   )}
                 </div>
               ) : (
-                <div>
+                  <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     📝 Contenu du post *
-                  </label>
+                    </label>
                   <textarea
                     value={directPostData.sourceContent}
                     onChange={(e) => setDirectPostData(prev => ({ ...prev, sourceContent: e.target.value }))}
@@ -1043,8 +1241,8 @@ const UnifiedPublication = () => {
                   </p>
                 </div>
               )}
-            </div>
-          </div>
+                  </div>
+                </div>
 
           {/* Footer */}
           <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
@@ -1054,7 +1252,7 @@ const UnifiedPublication = () => {
               className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
             >
               Annuler
-            </button>
+                  </button>
             <button
               type="button"
               onClick={handlePublishDirectPost}
@@ -1069,11 +1267,11 @@ const UnifiedPublication = () => {
                 ? 'Publier le contenu généré' 
                 : 'Publier maintenant'
               }
-            </button>
-          </div>
+                  </button>
         </div>
       </div>
-    );
+    </div>
+  );
   };
 
   const renderEditPostModal = () => (

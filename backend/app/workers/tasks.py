@@ -49,12 +49,18 @@ def fetch_and_process_feed(feed_id: int):
                     # Sinon, générer pour tous les réseaux
                     target_networks = ["facebook", "linkedin", "x"]
             
+                # Préparer le contenu de l'article avec le lien source
+                article_content_with_link = f"Titre: {article['title']}\nContenu: {article['content']}"
+                if article.get('source_url'):
+                    article_content_with_link += f"\n\nLien de l'article: {article['source_url']}"
+                
                 # Générer les posts pour tous les réseaux définis en utilisant les prompts spécifiques
                 generated_content = llm_service.generate_social_media_posts(
-                    article_content=f"Titre: {article['title']}\nContenu: {article['content']}",
+                    article_content=article_content_with_link,
                     custom_prompt=feed.custom_prompt,
                     network_prompts=feed.network_prompts,
-                    target_networks=target_networks
+                    target_networks=target_networks,
+                    source_url=article.get('source_url')  # Passer le lien séparément aussi
                 )
                 
                 # Créer le post
@@ -258,10 +264,38 @@ def process_publication_queue():
                     item.published_at = now
                     item.publication_url = url
                     print(f"✅ Publication réussie sur {item.network}: {url}")
+                    
+                    # Enregistrer dans la table publications pour l'historique
+                    from app.models.publication import Publication
+                    publication = Publication(
+                        post_id=item.post_id,
+                        feed_id=item.feed_id,  # Pour filtrage par flux dans l'historique
+                        network=item.network,
+                        content=item.content,
+                        published_url=url,
+                        is_success=True,
+                        published_at=now
+                    )
+                    db.add(publication)
+                    
                 else:
                     item.status = 'FAILED'
                     item.error_message = message
                     print(f"❌ Échec de publication sur {item.network}: {message}")
+                    
+                    # Enregistrer l'échec dans la table publications
+                    from app.models.publication import Publication
+                    publication = Publication(
+                        post_id=item.post_id,
+                        feed_id=item.feed_id,  # Pour filtrage par flux dans l'historique
+                        network=item.network,
+                        content=item.content,
+                        published_url=None,
+                        is_success=False,
+                        error_message=message,
+                        published_at=now
+                    )
+                    db.add(publication)
                 
                 db.commit()
                 processed_count += 1

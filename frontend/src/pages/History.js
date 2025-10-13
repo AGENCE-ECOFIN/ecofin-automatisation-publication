@@ -74,18 +74,24 @@ const History = () => {
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Filtres</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">Flux</label>
+              <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">
+                🗂️ Flux / Type
+              </label>
               <select
                 id="feedFilter"
                 value={feedFilter}
                 onChange={(e) => setFeedFilter(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="">Tous les flux</option>
-                <option value="direct">📤 Posts directs</option>
-                {feeds.map(feed => (
-                  <option key={feed.id} value={feed.id}>{feed.name}</option>
-                ))}
+                <option value="">📋 Tous les types</option>
+                <optgroup label="Type de post">
+                  <option value="direct">📤 Posts directs</option>
+                </optgroup>
+                <optgroup label="Flux RSS">
+                  {feeds.map(feed => (
+                    <option key={feed.id} value={feed.id}>📰 {feed.name}</option>
+                  ))}
+                </optgroup>
               </select>
             </div>
 
@@ -240,9 +246,15 @@ const History = () => {
                         </a>
                       )}
                       
-                      <span className="text-xs text-gray-500">
-                        {item.feed_id ? `Flux #${item.feed_id}` : '📤 Post direct'}
-                      </span>
+                      {item.post_id ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                          📰 Post RSS #{item.post_id}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                          📤 Post Direct
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

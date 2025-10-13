@@ -8,7 +8,7 @@ class LLMService:
         if settings.OPENAI_API_KEY:
             openai.api_key = settings.OPENAI_API_KEY
 
-    def generate_social_media_posts(self, article_content: str, custom_prompt: str = None, network_prompts: Dict[str, str] = None, target_networks: List[str] = None) -> Dict[str, Any]:
+    def generate_social_media_posts(self, article_content: str, custom_prompt: str = None, network_prompts: Dict[str, str] = None, target_networks: List[str] = None, source_url: str = None) -> Dict[str, Any]:
         """
         Génère des posts pour différents réseaux sociaux à partir du contenu d'un article
         """
@@ -18,11 +18,11 @@ class LLMService:
         
         # Mode test sans OpenAI - génération de contenu simple
         if not settings.OPENAI_API_KEY:
-            return self._generate_test_posts(article_content, target_networks)
+            return self._generate_test_posts(article_content, target_networks, source_url)
         
         # Si des prompts spécifiques par réseau sont fournis, les utiliser
         if network_prompts and any(network_prompts.values()):
-            return self._generate_posts_with_specific_prompts(article_content, network_prompts, target_networks)
+            return self._generate_posts_with_specific_prompts(article_content, network_prompts, target_networks, source_url)
         
         # Sinon, utiliser le prompt général
         networks_description = ", ".join(target_networks).title()
@@ -34,6 +34,8 @@ class LLMService:
         - LinkedIn : Ton professionnel, focus business/carrière, contenu informatif
         - X (Twitter) : Messages concis, hashtags pertinents, engagement immédiat
         
+        IMPORTANT : TOUJOURS inclure le lien de l'article à la fin de chaque post.
+        
         Retourne les posts dans le format JSON suivant :
         {{
             "facebook": "contenu pour Facebook",
@@ -42,6 +44,7 @@ class LLMService:
         }}
         
         Garde un ton professionnel et engageant. Chaque post doit être optimisé pour son réseau.
+        Le lien DOIT apparaître à la fin de chaque post.
         """
 
         try:
@@ -68,7 +71,7 @@ class LLMService:
                 error_posts[network] = "Erreur lors de la génération"
             return error_posts
 
-    def _generate_posts_with_specific_prompts(self, article_content: str, network_prompts: Dict[str, str], target_networks: List[str]) -> Dict[str, Any]:
+    def _generate_posts_with_specific_prompts(self, article_content: str, network_prompts: Dict[str, str], target_networks: List[str], source_url: str = None) -> Dict[str, Any]:
         """
         Génère des posts en utilisant des prompts spécifiques pour chaque réseau
         """
@@ -78,6 +81,11 @@ class LLMService:
             try:
                 # Récupérer le prompt spécifique pour ce réseau
                 network_prompt = network_prompts.get(network)
+                
+                # Ajouter instruction pour inclure le lien
+                if source_url and network_prompt:
+                    network_prompt += f"\n\nIMPORTANT : Inclure le lien {source_url} à la fin du post."
+                
                 if not network_prompt:
                     # Si pas de prompt spécifique, utiliser un prompt par défaut
                     network_prompt = f"Crée un post pour {network} basé sur cet article."
@@ -196,7 +204,7 @@ class LLMService:
         
         return posts
     
-    def _generate_test_posts(self, article_content: str, target_networks: List[str]) -> Dict[str, Any]:
+    def _generate_test_posts(self, article_content: str, target_networks: List[str], source_url: str = None) -> Dict[str, Any]:
         """
         Génère des posts de test sans OpenAI pour le développement
         """
@@ -207,15 +215,18 @@ class LLMService:
         # Générer du contenu simple pour chaque réseau
         posts = {}
         
+        # Préparer le lien à ajouter
+        link_text = f"\n\n🔗 {source_url}" if source_url else ""
+        
         for network in target_networks:
             if network == "facebook":
-                posts[network] = f"📰 {title}\n\nDécouvrez cet article intéressant sur notre page ! #Actualités #EcoFin"
+                posts[network] = f"📰 {title}\n\nDécouvrez cet article intéressant sur notre page ! #Actualités #EcoFin{link_text}"
             elif network == "linkedin":
-                posts[network] = f"Article professionnel : {title}\n\nUn regard approfondi sur les développements récents dans notre secteur. #Business #Innovation"
+                posts[network] = f"Article professionnel : {title}\n\nUn regard approfondi sur les développements récents dans notre secteur. #Business #Innovation{link_text}"
             elif network == "x":
-                posts[network] = f"🚀 {title}\n\n#Actualités #EcoFin"
+                posts[network] = f"🚀 {title}\n\n#Actualités #EcoFin{link_text}"
             else:
-                posts[network] = f"📰 {title}\n\nContenu adapté pour {network}"
+                posts[network] = f"📰 {title}\n\nContenu adapté pour {network}{link_text}"
         
         return posts
 

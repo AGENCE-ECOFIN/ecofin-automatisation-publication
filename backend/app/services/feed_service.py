@@ -12,23 +12,47 @@ class FeedService:
         self.db = db
 
     def create_feed(self, feed: FeedCreate, user_id: int) -> Feed:
+        # Log pour debug
+        print(f"\n🔍 DEBUG CREATE FEED:")
+        print(f"   name: {feed.name}")
+        print(f"   target_networks: {feed.target_networks}")
+        print(f"   social_pages: {feed.social_pages}")
+        print(f"   network_prompts: {feed.network_prompts}")
+        print(f"   publication_timing: {feed.publication_timing}")
+        
         db_feed = Feed(
             name=feed.name,
             url=str(feed.url),
             frequency_minutes=feed.frequency_minutes,
             custom_prompt=feed.custom_prompt,
             target_networks=feed.target_networks,
+            social_pages=feed.social_pages,  # ← Explicitement ajouté
+            network_prompts=feed.network_prompts,  # ← Explicitement ajouté
+            publication_timing=feed.publication_timing,  # ← Explicitement ajouté
             created_by=user_id
         )
+        
         self.db.add(db_feed)
         self.db.commit()
         self.db.refresh(db_feed)
+        
+        print(f"\n✅ Feed créé - Vérification:")
+        print(f"   id: {db_feed.id}")
+        print(f"   social_pages APRÈS commit: {db_feed.social_pages}")
+        print(f"   network_prompts APRÈS commit: {db_feed.network_prompts}")
+        
         return db_feed
 
     def get_feeds(self, user_id: Optional[int] = None) -> List[Feed]:
+        """
+        Récupère tous les flux
+        Si user_id fourni, filtre par créateur (non utilisé actuellement)
+        Par défaut: TOUS les flux visibles par tous
+        """
         query = self.db.query(Feed)
-        if user_id:
-            query = query.filter(Feed.created_by == user_id)
+        # Ne plus filtrer par user_id - partage global
+        # if user_id:
+        #     query = query.filter(Feed.created_by == user_id)
         return query.all()
 
     def get_feed_by_id(self, feed_id: int) -> Optional[Feed]:
@@ -40,11 +64,23 @@ class FeedService:
             return None
 
         update_data = feed_update.model_dump(exclude_unset=True)
+        
+        # Log pour debug
+        print(f"\n🔍 DEBUG UPDATE FEED #{feed_id}:")
+        print(f"   Données reçues: {update_data}")
+        print(f"   social_pages AVANT: {db_feed.social_pages}")
+        
         for field, value in update_data.items():
+            print(f"   Mise à jour {field}: {value}")
             setattr(db_feed, field, value)
 
         self.db.commit()
         self.db.refresh(db_feed)
+        
+        print(f"\n✅ Feed mis à jour - Vérification:")
+        print(f"   social_pages APRÈS commit: {db_feed.social_pages}")
+        print(f"   network_prompts APRÈS commit: {db_feed.network_prompts}")
+        
         return db_feed
 
     def delete_feed(self, feed_id: int) -> bool:
