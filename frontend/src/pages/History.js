@@ -3,7 +3,7 @@ import { useQuery } from 'react-query';
 import { FaCheck, FaTimes, FaExternalLinkAlt, FaCalendarAlt } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { publicationQueueService, postsService } from '../services/api';
+import { publicationQueueService, postsService, feedsService } from '../services/api';
 import { cleanHtmlContent } from '../utils/htmlUtils';
 import SocialNetworkIcon from '../components/SocialNetworkIcon';
 
@@ -12,44 +12,52 @@ const History = () => {
   const [feedFilter, setFeedFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   
-  // Récupérer tous les items publiés et échoués
-  const { data: publishedData = [], isLoading: loadingPublished } = useQuery('history-published', () => 
-    publicationQueueService.getQueue({ status: 'PUBLISHED' })
-  );
-  
-  const { data: failedData = [], isLoading: loadingFailed } = useQuery('history-failed', () => 
-    publicationQueueService.getQueue({ status: 'FAILED' })
-  );
+  // Récupérer l'historique complet depuis la table publications
+  const { data: historyData = [], isLoading, error } = useQuery('history', () => postsService.getHistory(100));
   
   // Récupérer les feeds pour les filtres
-  const { data: feedsData } = useQuery('feeds', () => postsService.getFeeds());
+  const { data: feedsData } = useQuery('feeds', postsService.getFeeds);
   const feeds = feedsData?.data || [];
   
-  const isLoading = loadingPublished || loadingFailed;
-  const error = null;
-  
-  // Combiner les deux listes
-  const published = Array.isArray(publishedData?.data) ? publishedData.data : [];
-  const failed = Array.isArray(failedData?.data) ? failedData.data : [];
-  const allHistory = [...published, ...failed].sort((a, b) => {
-    const dateA = new Date(a.published_at || a.created_at);
-    const dateB = new Date(b.published_at || b.created_at);
-    return dateB - dateA; // Plus récent en premier
-  });
+  // S'assurer que allHistory est un tableau
+  const allHistory = Array.isArray(historyData?.data) 
+    ? historyData.data 
+    : Array.isArray(historyData) 
+      ? historyData 
+      : [];
   
   // Appliquer les filtres
   const history = allHistory.filter(item => {
     if (networkFilter && item.network !== networkFilter) return false;
-    if (feedFilter && item.feed_id !== parseInt(feedFilter)) return false;
-    if (statusFilter && item.status !== statusFilter) return false;
+    if (feedFilter) {
+      // Gérer le filtre "direct" pour les posts directs
+      if (feedFilter === 'direct') {
+        if (item.post_id !== null) return false;
+      } else if (item.post_id === null || item.feed_id !== parseInt(feedFilter)) {
+        return false;
+      }
+    }
+    if (statusFilter) {
+      // Mapper le statut is_success vers PUBLISHED/FAILED
+      const itemStatus = item.is_success ? 'PUBLISHED' : 'FAILED';
+      if (itemStatus !== statusFilter) return false;
+    }
     return true;
   });
 
-  // Debug logs (réduits)
-  console.log('🔍 History Debug:', {
-    historyCount: history?.length || 0,
+  // Debug logs détaillés
+  console.log('🔍 History Debug COMPLET:', {
+    'historyData raw': historyData,
+    'historyData.data': historyData?.data,
+    'allHistory length': allHistory.length,
+    'allHistory': allHistory,
+    'filteredHistory length': history.length,
+    'filteredHistory': history,
     isLoading,
-    hasError: !!error
+    error: error,
+    'networkFilter': networkFilter,
+    'feedFilter': feedFilter,
+    'statusFilter': statusFilter
   });
 
   return (
@@ -74,6 +82,7 @@ const History = () => {
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Tous les flux</option>
+                <option value="direct">📤 Posts directs</option>
                 {feeds.map(feed => (
                   <option key={feed.id} value={feed.id}>{feed.name}</option>
                 ))}
@@ -129,10 +138,10 @@ const History = () => {
               📊 Total : <strong className="text-gray-900">{history.length}</strong>
             </span>
             <span>
-              ✅ Publiés : <strong className="text-green-600">{allHistory.filter(i => i.status === 'PUBLISHED').length}</strong>
+              ✅ Publiés : <strong className="text-green-600">{allHistory.filter(i => i.is_success).length}</strong>
             </span>
             <span>
-              ❌ Échecs : <strong className="text-red-600">{allHistory.filter(i => i.status === 'FAILED').length}</strong>
+              ❌ Échecs : <strong className="text-red-600">{allHistory.filter(i => !i.is_success).length}</strong>
             </span>
           </div>
         </div>
@@ -169,9 +178,9 @@ const History = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        item.status === 'PUBLISHED' ? 'bg-green-100' : 'bg-red-100'
+                        item.is_success ? 'bg-green-100' : 'bg-red-100'
                       }`}>
-                        {item.status === 'PUBLISHED' ? (
+                        {item.is_success ? (
                           <FaCheck className="w-5 h-5 text-green-600" />
                         ) : (
                           <FaTimes className="w-5 h-5 text-red-600" />
@@ -184,11 +193,11 @@ const History = () => {
                             {item.network}
                           </h3>
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            item.status === 'PUBLISHED'
+                            item.is_success
                               ? 'bg-green-100 text-green-800' 
                               : 'bg-red-100 text-red-800'
                           }`}>
-                            {item.status === 'PUBLISHED' ? 'Publié' : 'Échec'}
+                            {item.is_success ? 'Publié' : 'Échec'}
                           </span>
                         </div>
                         
@@ -219,9 +228,9 @@ const History = () => {
                     </div>
                     
                     <div className="flex items-center space-x-2">
-                      {item.publication_url && (
+                      {item.published_url && (
                         <a
-                          href={item.publication_url}
+                          href={item.published_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center px-3 py-1 text-sm text-primary hover:text-primary/80 transition-colors"
