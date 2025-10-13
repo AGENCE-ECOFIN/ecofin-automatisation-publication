@@ -130,6 +130,27 @@ class PostService:
                     # Page : depuis la config DU FLUX
                     destination_id = social_pages.get(network, '')
                     
+                    # ⚠️ Facebook nécessite OBLIGATOIREMENT un pageId
+                    # Utiliser la page du flux ou fallback vers blotato_accounts.json
+                    if network == 'facebook' and not destination_id:
+                        import json
+                        import os
+                        try:
+                            blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
+                            with open(blotato_file, 'r') as f:
+                                blotato_accounts = json.load(f)
+                                facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
+                                if facebook_pages and len(facebook_pages) > 0:
+                                    destination_id = facebook_pages[0]['id']
+                                    print(f"   ⚠️  Page Facebook manquante pour ce flux, utilisation du fallback: {facebook_pages[0]['name']}")
+                        except Exception as e:
+                            print(f"   ❌ Impossible de charger blotato_accounts.json: {e}")
+                    
+                    # Si toujours pas de page pour Facebook, skip
+                    if network == 'facebook' and not destination_id:
+                        print(f"   ❌ Facebook nécessite un pageId - Skip ce réseau")
+                        continue
+                    
                     queue_item = PublicationQueue(
                         post_id=post.id,
                         feed_id=post.feed_id,
@@ -137,13 +158,13 @@ class PostService:
                         content=generated_content[network],
                         media_urls=media_urls,
                         scheduled_at=scheduled_time,  # ✅ Délai depuis config GLOBALE
-                        target_page_id=destination_id,  # ✅ Page depuis config DU FLUX
+                        target_page_id=destination_id,  # ✅ Page depuis config DU FLUX (ou fallback)
                         status="PENDING",
                         is_paused=False
                     )
                     self.db.add(queue_item)
                     
-                    print(f"📅 Validation: Programmé {network} pour {scheduled_time.strftime('%H:%M')} (délai global: {delay_minutes} min) sur page du flux: {destination_id or 'non configurée'}")
+                    print(f"📅 Validation: Programmé {network} pour {scheduled_time.strftime('%H:%M')} (délai global: {delay_minutes} min) sur page: {destination_id}")
             
             self.db.commit()
             print(f"✅ Post ajouté à la file de publication pour {len(target_networks)} réseau(x)")
