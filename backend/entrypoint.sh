@@ -32,6 +32,10 @@ python /app/create_admin.py 2>&1 || echo "⚠️  Admin déjà existant"
 
 # 4. Démarrer l'application
 echo ""
+# Initialiser les horaires par défaut
+echo "📅 Initialisation des horaires par défaut..."
+python /app/init_schedules.py
+
 echo "================================================================"
 echo "✅ Initialisation complète - Démarrage de l'application..."
 echo "================================================================"

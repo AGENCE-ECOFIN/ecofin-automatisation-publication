@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-from app.api import auth, feeds, posts, test_generation, tasks, networks, users, upload
+from app.api import auth, feeds, posts, test_generation, tasks, networks, users, upload, schedule
 from app.api import publication_queue as publication_queue_api
 from app.api import unified_publication, blotato_accounts, direct_post
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +9,7 @@ from app.core.database import engine
 from app.models import user, feed, post, publication
 from app.models import network_config
 from app.models.publication_queue import PublicationQueue
+from app.models.schedule_config import ScheduleConfig
 import logging
 
 # Configuration du logging
@@ -64,6 +65,7 @@ app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(blotato_accounts.router, tags=["blotato-accounts"])
 app.include_router(direct_post.router, tags=["direct-post"])
 app.include_router(upload.router, tags=["upload"])
+app.include_router(schedule.router, prefix="/schedule", tags=["schedule"])
 
 
 @app.get("/")

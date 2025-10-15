@@ -227,11 +227,13 @@ def process_publication_queue():
     """
     from app.models.publication_queue import PublicationQueue
     from app.services.publication_service import PublicationService
+    from app.services.schedule_service import ScheduleService
     from datetime import datetime, timezone
     
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
+        schedule_service = ScheduleService(db)
         
         # Récupérer tous les posts en attente dont l'heure de publication est passée
         pending_items = db.query(PublicationQueue).filter(
@@ -246,6 +248,14 @@ def process_publication_queue():
         for item in pending_items:
             try:
                 print(f"📤 Publication #{item.id} sur {item.network} (programmée pour {item.scheduled_at})")
+                
+                # Vérifier si la publication est autorisée selon les horaires
+                schedule_status = schedule_service.is_publication_allowed_now(item.network)
+                if not schedule_status["allowed"]:
+                    print(f"⏰ Publication #{item.id} reportée: {schedule_status['reason']}")
+                    if schedule_status["next_available"]:
+                        print(f"   Prochaine publication possible: {schedule_status['next_available']}")
+                    continue
                 
                 # Marquer comme en cours de publication
                 item.status = 'PUBLISHING'

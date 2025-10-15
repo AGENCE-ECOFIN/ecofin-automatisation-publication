@@ -6,11 +6,14 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { postsService, publicationQueueService, networksService, feedsService, api } from '../services/api';
 import SocialNetworkIcon from '../components/SocialNetworkIcon';
+import ScheduleConfigModal from '../components/ScheduleConfigModal';
 
 const UnifiedPublication = () => {
   const [activeTab, setActiveTab] = useState('queue');
   const [showDirectPost, setShowDirectPost] = useState(false);
   const [showNetworkConfig, setShowNetworkConfig] = useState(false);
+  const [showScheduleConfigModal, setShowScheduleConfigModal] = useState(false);
+  const [selectedNetworkForSchedule, setSelectedNetworkForSchedule] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [feedFilter, setFeedFilter] = useState('');
   const [networkFilter, setNetworkFilter] = useState('');
@@ -346,6 +349,21 @@ const UnifiedPublication = () => {
               <span className="hidden sm:inline">Configuration des réseaux</span>
               <span className="sm:hidden">Config</span>
             </button>
+            
+            {/* Boutons pour configurer les horaires par réseau */}
+            {networks?.map(network => (
+              <button
+                key={network.network}
+                onClick={() => {
+                  setSelectedNetworkForSchedule(network.network);
+                  setShowScheduleConfigModal(true);
+                }}
+                className="px-2 sm:px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm"
+                title={`Configurer les horaires pour ${network.network}`}
+              >
+                📅 {network.network.charAt(0).toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -650,7 +668,7 @@ const UnifiedPublication = () => {
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold">Configuration Globale des Réseaux</h2>
-              <p className="text-indigo-100 mt-1">Délais et limites pour tous les flux RSS</p>
+              <p className="text-indigo-100 mt-1">Délais, limites et horaires pour tous les flux RSS</p>
             </div>
             <button
               onClick={() => setShowNetworkConfig(false)}
@@ -1396,6 +1414,19 @@ const UnifiedPublication = () => {
         {showDirectPost && renderDirectPostModal()}
         {showNetworkConfig && renderNetworkConfigModal()}
         {editingPost && renderEditPostModal()}
+
+        {/* Modal de configuration des horaires */}
+        <ScheduleConfigModal
+          isOpen={showScheduleConfigModal}
+          onClose={() => {
+            setShowScheduleConfigModal(false);
+            setSelectedNetworkForSchedule(null);
+          }}
+          network={selectedNetworkForSchedule}
+          onSave={() => {
+            console.log('Horaires sauvegardés pour', selectedNetworkForSchedule);
+          }}
+        />
       </div>
     </div>
   );
