@@ -9,9 +9,12 @@ from typing import Optional
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
-# Créer le dossier uploads s'il n'existe pas
+# Définir le dossier uploads
 UPLOAD_DIR = Path("uploads/images")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+def ensure_upload_dir():
+    """Créer le dossier uploads s'il n'existe pas"""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Extensions autorisées
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -26,6 +29,9 @@ async def upload_image(
     Upload une image et retourne l'URL
     """
     try:
+        # S'assurer que le dossier existe
+        ensure_upload_dir()
+        
         # Vérifier l'extension
         file_ext = os.path.splitext(file.filename)[1].lower()
         if file_ext not in ALLOWED_EXTENSIONS:

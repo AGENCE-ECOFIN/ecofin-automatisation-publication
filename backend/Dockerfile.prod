@@ -41,6 +41,12 @@ COPY --chown=appuser:appuser . .
 COPY --chown=appuser:appuser entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Copy database scripts
+COPY --chown=appuser:appuser create_admin.py /app/create_admin.py
+COPY --chown=appuser:appuser init_db.py /app/init_db.py
+COPY --chown=appuser:appuser init_schedules.py /app/init_schedules.py
+COPY --chown=appuser:appuser create_schedule_configs_table.py /app/create_schedule_configs_table.py
+
 # Create logs and uploads directories with correct permissions
 RUN mkdir -p /app/logs /app/uploads/images && \
     chown -R appuser:appuser /app/logs /app/uploads && \
