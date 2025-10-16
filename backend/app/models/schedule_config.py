@@ -58,7 +58,7 @@ class ScheduleConfig(Base):
         
         return start_minutes <= current_minutes <= end_minutes
 
-    def get_available_minutes_in_range(self) -> list:
+    def get_available_minutes_in_range(self, interval_minutes: int = 30) -> list:
         """Retourne toutes les minutes disponibles dans le créneau"""
         start_hour, start_min = map(int, self.start_time.split(':'))
         end_hour, end_min = map(int, self.end_time.split(':'))
@@ -67,7 +67,7 @@ class ScheduleConfig(Base):
         end_minutes = end_hour * 60 + end_min
         
         available_minutes = []
-        for minute in range(start_minutes, end_minutes + 1, self.interval_minutes):
+        for minute in range(start_minutes, end_minutes + 1, interval_minutes):
             available_minutes.append(minute)
             
         return available_minutes

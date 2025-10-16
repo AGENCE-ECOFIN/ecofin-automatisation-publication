@@ -38,7 +38,7 @@ services:
 
   # Backend API (FastAPI)
   backend:
-    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:preprod
+    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:latest
     container_name: ecofin-backend-preprod
     restart: always
     depends_on:
@@ -99,7 +99,7 @@ services:
 
   # Celery Worker
   celery-worker:
-    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:preprod
+    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:latest
     container_name: ecofin-celery-worker-preprod
     restart: always
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
@@ -121,7 +121,7 @@ services:
 
   # Celery Beat (Scheduler)
   celery-beat:
-    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:preprod
+    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-backend:latest
     container_name: ecofin-celery-beat-preprod
     restart: always
     command: celery -A app.workers.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
@@ -141,15 +141,14 @@ services:
 
   # Frontend (React)
   frontend:
-    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-frontend:preprod
+    image: ${DOCKER_HUB_USERNAME:-noname1705}/ecofin-publication-frontend:latest
     container_name: ecofin-frontend-preprod
     restart: always
     ports:
       - "80:80"
     depends_on:
       - backend
-    ports:
-      - "80:80"
+
     networks:
       - ecofin-network
     healthcheck:
