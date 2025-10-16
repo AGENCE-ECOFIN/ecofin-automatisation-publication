@@ -95,10 +95,23 @@ const FeedEditModal = ({ isOpen, onClose, feed, onSave, isLoading }) => {
   };
 
   const handleSubmit = async () => {
+    // Validation de base
     if (!formData.name || !formData.url || formData.target_networks.length === 0) {
       alert('Veuillez remplir tous les champs obligatoires');
       return;
     }
+    
+    // Validation des pages de destination
+    for (const network of formData.target_networks) {
+      if (!formData.social_pages[network]) {
+        const networkName = network === 'facebook' ? 'Facebook' : network === 'linkedin' ? 'LinkedIn' : 'X (Twitter)';
+        alert(`❌ Veuillez sélectionner une page de destination pour ${networkName}`);
+        setCurrentStep(3); // Retour à l'étape des pages
+        return;
+      }
+    }
+    
+    console.log('📤 Mise à jour du flux:', formData);
     await onSave(feed.id, formData);
     handleClose();
   };

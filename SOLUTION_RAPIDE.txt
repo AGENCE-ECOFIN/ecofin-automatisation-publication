@@ -1,0 +1,29 @@
+🚀 SOLUTION RAPIDE - À EXÉCUTER SUR LE SERVEUR
+================================================
+
+1. Connectez-vous au serveur :
+   ssh user@185.143.103.162
+
+2. Créez les réseaux avec cette SEULE commande :
+   
+docker exec -it ecofin-backend-preprod python << 'PYTHON'
+from app.core.database import SessionLocal
+from app.models.network_config import NetworkConfig
+db = SessionLocal()
+existing = db.query(NetworkConfig).all()
+if len(existing) == 0:
+    for network_name, delay, max_posts in [('facebook', 4, 10), ('linkedin', 5, 8), ('x', 3, 15)]:
+        db.add(NetworkConfig(network=network_name, is_active=True, default_publication_delay=delay, max_posts_per_day=max_posts))
+    db.commit()
+    print("✅ 3 réseaux créés!")
+else:
+    print(f"✅ {len(existing)} réseaux déjà créés")
+db.close()
+PYTHON
+
+3. Redémarrez le backend :
+   docker restart ecofin-backend-preprod
+
+4. Attendez 15 secondes puis rafraîchissez la page (Ctrl+F5)
+
+✅ Le modal "Configuration des réseaux" devrait maintenant afficher 3 cartes !

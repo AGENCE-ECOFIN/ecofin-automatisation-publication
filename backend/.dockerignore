@@ -24,6 +24,9 @@ ENV/
 logs/
 *.log
 
+# Uploads (ne pas inclure dans l'image)
+uploads/
+
 # Database
 *.db
 *.sqlite

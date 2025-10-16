@@ -53,6 +53,8 @@ def pause_queue_item(
     current_user: User = Depends(get_current_user)
 ):
     """Met en pause un élément de la file d'attente"""
+    from datetime import datetime, timezone
+    
     item = db.query(PublicationQueue).filter(PublicationQueue.id == item_id).first()
     if not item:
         raise HTTPException(
@@ -66,9 +68,20 @@ def pause_queue_item(
             detail="Impossible de mettre en pause cet élément"
         )
     
+    # Calculer le temps restant en secondes
+    now = datetime.now(timezone.utc)
+    if item.scheduled_at:
+        remaining_seconds = int((item.scheduled_at - now).total_seconds())
+        
+        # Sauvegarder le temps restant dans extra_data
+        extra_data = item.extra_data or {}
+        extra_data['paused_at'] = now.isoformat()
+        extra_data['remaining_seconds'] = max(0, remaining_seconds)  # Pas de valeur négative
+        item.extra_data = extra_data
+        
+        print(f"⏸️ Pause item #{item_id}: {remaining_seconds}s restantes sauvegardées")
+    
     item.is_paused = True
-    # Garder le statut actuel mais marquer comme en pause
-    # Le statut visuel sera géré par l'interface
     db.commit()
     
     return {"message": "Élément mis en pause avec succès"}
@@ -80,6 +93,8 @@ def resume_queue_item(
     current_user: User = Depends(get_current_user)
 ):
     """Reprend un élément de la file d'attente"""
+    from datetime import datetime, timezone, timedelta
+    
     item = db.query(PublicationQueue).filter(PublicationQueue.id == item_id).first()
     if not item:
         raise HTTPException(
@@ -93,11 +108,28 @@ def resume_queue_item(
             detail="Cet élément n'est pas en pause"
         )
     
+    # Récupérer le temps restant sauvegardé lors de la pause
+    extra_data = item.extra_data or {}
+    remaining_seconds = extra_data.get('remaining_seconds', 300)  # Default 5 min si pas sauvegardé
+    
+    # Recalculer scheduled_at = maintenant + temps restant
+    now = datetime.now(timezone.utc)
+    item.scheduled_at = now + timedelta(seconds=remaining_seconds)
     item.is_paused = False
     item.status = "PENDING"
+    
+    # Nettoyer les données de pause
+    if 'paused_at' in extra_data:
+        del extra_data['paused_at']
+    if 'remaining_seconds' in extra_data:
+        del extra_data['remaining_seconds']
+    item.extra_data = extra_data if extra_data else None
+    
     db.commit()
     
-    return {"message": "Élément repris avec succès"}
+    print(f"▶️ Reprise item #{item_id}: reprogrammé dans {remaining_seconds}s (à {item.scheduled_at.strftime('%H:%M:%S')})")
+    
+    return {"message": f"Élément repris avec succès - programmé dans {remaining_seconds//60}min {remaining_seconds%60}s"}
 
 @router.put("/{item_id}/cancel")
 def cancel_queue_item(

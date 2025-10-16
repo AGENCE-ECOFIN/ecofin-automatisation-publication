@@ -30,8 +30,12 @@ def get_feeds(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Récupère TOUS les flux pour tous les utilisateurs
+    Partage global des flux entre tous les utilisateurs
+    """
     feed_service = FeedService(db)
-    return feed_service.get_feeds(current_user.id)
+    return feed_service.get_feeds()  # Pas de filtre par user_id
 
 
 @router.get("/{feed_id}", response_model=FeedResponse)

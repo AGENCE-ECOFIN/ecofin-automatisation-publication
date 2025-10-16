@@ -9,12 +9,13 @@ class PublicationBase(BaseModel):
 
 
 class PublicationCreate(PublicationBase):
-    post_id: int
+    post_id: Optional[int] = None  # NULL pour posts directs
 
 
 class PublicationResponse(PublicationBase):
     id: int
-    post_id: int
+    post_id: Optional[int] = None  # NULL pour posts directs
+    feed_id: Optional[int] = None  # NULL pour posts directs
     published_url: Optional[str] = None
     is_success: bool
     error_message: Optional[str] = None

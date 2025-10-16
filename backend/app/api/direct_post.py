@@ -1,91 +1,100 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from app.core.database import get_db
 from app.api.dependencies import get_current_user
 from app.models.user import User
-from app.models.publication_queue import PublicationQueue
-from app.models.network_config import NetworkConfig
-from datetime import datetime, timezone, timedelta
+from app.services.blotato_service import BlotatoService
+from datetime import datetime
 
-router = APIRouter(prefix="/direct-post", tags=["direct-post"])
-
+router = APIRouter()
 
 class DirectPostRequest(BaseModel):
     network: str
     content: str
     target_page_id: str
-    media_urls: Optional[list] = None
+    media_urls: Optional[List[str]] = []
 
-
-@router.post("/")
-def create_direct_post(
+@router.post("/direct-post/")
+async def create_direct_post(
     post_data: DirectPostRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Crée un post direct qui sera ajouté à la file de publication
+    Créer et publier IMMÉDIATEMENT un post direct (sans flux RSS)
+    Publication IMMÉDIATE, ne passe PAS par la file d'attente
     """
     try:
-        # Récupérer la config globale du réseau pour le délai
-        network_config = db.query(NetworkConfig).filter(
-            NetworkConfig.network == post_data.network,
-            NetworkConfig.is_active == True
-        ).first()
+        # Initialiser le service Blotato
+        blotato_service = BlotatoService()
         
-        if not network_config:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Réseau {post_data.network} non configuré ou inactif"
-            )
+        print(f"\n📤 Publication directe IMMÉDIATE sur {post_data.network}")
+        print(f"   Contenu: {post_data.content[:100]}...")
+        print(f"   Page: {post_data.target_page_id}")
+        print(f"   Médias: {len(post_data.media_urls) if post_data.media_urls else 0} image(s)")
         
-        delay_minutes = network_config.default_publication_delay
-        now = datetime.now(timezone.utc)
-        
-        # Vérifier s'il y a d'autres posts programmés sur ce réseau
-        # Pour un post direct, on utilise feed_id = 0 pour le différencier
-        last_scheduled = db.query(PublicationQueue).filter(
-            PublicationQueue.network == post_data.network,
-            PublicationQueue.status.in_(['PENDING', 'PUBLISHING'])
-        ).order_by(PublicationQueue.scheduled_at.desc()).first()
-        
-        if last_scheduled and last_scheduled.scheduled_at:
-            scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-            print(f"🔄 FIFO: Post direct sur {post_data.network} programmé après le dernier post")
-        else:
-            scheduled_time = now + timedelta(minutes=delay_minutes)
-            print(f"✨ Premier post sur {post_data.network}")
-        
-        # Créer l'item dans la file
-        queue_item = PublicationQueue(
-            post_id=None,  # Post direct, pas lié à un article RSS
-            feed_id=None,
+        # Publier IMMÉDIATEMENT via Blotato
+        success, message, publication_url = blotato_service.publish_to_network(
             network=post_data.network,
             content=post_data.content,
             media_urls=post_data.media_urls or [],
-            scheduled_at=scheduled_time,
-            target_page_id=post_data.target_page_id,
-            status="PENDING",
-            is_paused=False
+            target_page_id=post_data.target_page_id
         )
         
-        db.add(queue_item)
-        db.commit()
-        db.refresh(queue_item)
-        
-        return {
-            "message": "Post direct créé avec succès",
-            "queue_item_id": queue_item.id,
-            "scheduled_at": queue_item.scheduled_at.isoformat(),
-            "network": queue_item.network
-        }
+        if success:
+            print(f"✅ Publication réussie: {publication_url}")
+            
+            # Enregistrer dans l'historique
+            from app.models.publication import Publication
+            publication = Publication(
+                post_id=None,  # Post direct, pas de post associé
+                feed_id=None,  # Post direct, pas de flux associé
+                network=post_data.network,
+                content=post_data.content,
+                published_url=publication_url,
+                is_success=True,
+                published_at=datetime.utcnow()
+            )
+            db.add(publication)
+            db.commit()
+            
+            return {
+                "message": "✅ Post publié IMMÉDIATEMENT avec succès !",
+                "success": True,
+                "publication_url": publication_url,
+                "network": post_data.network,
+                "published_at": datetime.utcnow().isoformat()
+            }
+        else:
+            print(f"❌ Échec publication: {message}")
+            
+            # Enregistrer l'échec dans l'historique
+            from app.models.publication import Publication
+            publication = Publication(
+                post_id=None,
+                feed_id=None,  # Post direct, pas de flux associé
+                network=post_data.network,
+                content=post_data.content,
+                published_url=None,
+                is_success=False,
+                error_message=message,
+                published_at=datetime.utcnow()
+            )
+            db.add(publication)
+            db.commit()
+            
+            raise HTTPException(
+                status_code=400,
+                detail=f"Erreur de publication: {message}"
+            )
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Erreur création post direct: {e}")
+        print(f"❌ Erreur inattendue: {e}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")

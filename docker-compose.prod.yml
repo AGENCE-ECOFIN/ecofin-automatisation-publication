@@ -82,6 +82,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     volumes:
       - ./logs:/app/logs
+      - ./uploads:/app/uploads
     networks:
       - ecofin-network
     healthcheck:

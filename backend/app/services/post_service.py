@@ -107,6 +107,17 @@ class PostService:
                         print(f"⚠️ Réseau {network} non configuré ou inactif, skip")
                         continue
                     
+                    # ✅ Vérifier les horaires configurés pour ce réseau
+                    from app.services.schedule_service import ScheduleService
+                    schedule_service = ScheduleService(self.db)
+                    schedule_status = schedule_service.is_publication_allowed_now(network)
+                    
+                    if not schedule_status["allowed"]:
+                        print(f"⏰ Publication {network} reportée: {schedule_status['reason']}")
+                        if schedule_status["next_available"]:
+                            print(f"   Prochaine publication possible: {schedule_status['next_available']}")
+                        continue
+                    
                     # Délai : depuis la config GLOBALE
                     delay_minutes = network_config.default_publication_delay
                     
@@ -119,16 +130,41 @@ class PostService:
                     
                     if last_scheduled and last_scheduled.scheduled_at:
                         # Programmer APRÈS le dernier post programmé + le délai
-                        scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                        base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
                         print(f"🔄 FIFO: Dernier post de ce feed sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                        print(f"   → Nouveau post programmé à {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
+                        print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
                     else:
                         # Pas de post en attente, programmer normalement
-                        scheduled_time = now + timedelta(minutes=delay_minutes)
-                        print(f"✨ Premier post de ce feed sur {network}, programmé à {scheduled_time.strftime('%H:%M')}")
+                        base_time = now + timedelta(minutes=delay_minutes)
+                        print(f"✨ Premier post de ce feed sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
+                    
+                    # Vérifier si cette heure est dans un créneau autorisé et ajuster si nécessaire
+                    scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                    print(f"📅 Heure finale programmée: {scheduled_time.strftime('%H:%M')}")
                     
                     # Page : depuis la config DU FLUX
                     destination_id = social_pages.get(network, '')
+                    
+                    # ⚠️ Facebook nécessite OBLIGATOIREMENT un pageId
+                    # Utiliser la page du flux ou fallback vers blotato_accounts.json
+                    if network == 'facebook' and not destination_id:
+                        import json
+                        import os
+                        try:
+                            blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
+                            with open(blotato_file, 'r') as f:
+                                blotato_accounts = json.load(f)
+                                facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
+                                if facebook_pages and len(facebook_pages) > 0:
+                                    destination_id = facebook_pages[0]['id']
+                                    print(f"   ⚠️  Page Facebook manquante pour ce flux, utilisation du fallback: {facebook_pages[0]['name']}")
+                        except Exception as e:
+                            print(f"   ❌ Impossible de charger blotato_accounts.json: {e}")
+                    
+                    # Si toujours pas de page pour Facebook, skip
+                    if network == 'facebook' and not destination_id:
+                        print(f"   ❌ Facebook nécessite un pageId - Skip ce réseau")
+                        continue
                     
                     queue_item = PublicationQueue(
                         post_id=post.id,
@@ -137,13 +173,13 @@ class PostService:
                         content=generated_content[network],
                         media_urls=media_urls,
                         scheduled_at=scheduled_time,  # ✅ Délai depuis config GLOBALE
-                        target_page_id=destination_id,  # ✅ Page depuis config DU FLUX
+                        target_page_id=destination_id,  # ✅ Page depuis config DU FLUX (ou fallback)
                         status="PENDING",
                         is_paused=False
                     )
                     self.db.add(queue_item)
                     
-                    print(f"📅 Validation: Programmé {network} pour {scheduled_time.strftime('%H:%M')} (délai global: {delay_minutes} min) sur page du flux: {destination_id or 'non configurée'}")
+                    print(f"📅 Validation: Programmé {network} pour {scheduled_time.strftime('%H:%M')} (délai global: {delay_minutes} min) sur page: {destination_id}")
             
             self.db.commit()
             print(f"✅ Post ajouté à la file de publication pour {len(target_networks)} réseau(x)")
