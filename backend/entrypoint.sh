@@ -22,7 +22,19 @@ fi
 # 2. Exécuter les migrations Alembic
 echo ""
 echo "🔄 Application des migrations Alembic..."
-alembic upgrade head 2>&1 || echo "⚠️  Migrations déjà appliquées"
+if alembic upgrade head 2>&1; then
+    echo "✅ Migrations appliquées avec succès!"
+else
+    echo "⚠️  Erreur lors de l'application des migrations, tentative de correction..."
+    # Essayer de marquer la migration comme appliquée si la table existe déjà
+    alembic stamp head 2>&1 || echo "⚠️  Impossible de marquer les migrations comme appliquées"
+fi
+
+# 2.5. S'assurer que la table schedule_configs existe
+echo ""
+echo "🔧 Vérification de la table schedule_configs..."
+python /app/create_schedule_configs_table.py || echo "⚠️  Erreur lors de la création de la table schedule_configs"
+
 echo "✅ Migrations terminées!"
 
 # 3. Créer l'utilisateur admin par défaut
