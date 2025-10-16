@@ -44,9 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Créer le dossier uploads s'il n'existe pas
-import os
-os.makedirs("uploads/images", exist_ok=True)
+# Note: Le dossier uploads est créé dans upload.py quand nécessaire
 
 # Servir les fichiers statiques (images uploadées)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

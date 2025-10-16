@@ -52,8 +52,9 @@ RUN mkdir -p /app/logs /app/uploads/images && \
     chown -R appuser:appuser /app/logs /app/uploads && \
     chmod -R 755 /app/logs /app/uploads
 
-# Switch to non-root user
+# Ensure the user can write to these directories
 USER appuser
+RUN mkdir -p /app/logs /app/uploads/images
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
