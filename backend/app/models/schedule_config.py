@@ -26,8 +26,8 @@ class ScheduleConfig(Base):
     # Configuration spécifique
     is_active = Column(Boolean, default=True)  # Activer/désactiver ce créneau
     
-    # Délai entre publications dans ce créneau (en minutes)
-    interval_minutes = Column(Integer, default=30)
+    # Note: L'intervalle est géré par le délai global du réseau (NetworkConfig)
+    # interval_minutes = Column(Integer, default=30)  # SUPPRIMÉ - duplication avec délai réseau
     
     # Maximum de publications par jour dans ce créneau
     max_posts_per_day = Column(Integer, default=5)

@@ -133,7 +133,7 @@ class ScheduleService:
 
         return "Maintenant"
 
-    def get_publication_schedule_for_network(self, network: str) -> List[Dict]:
+    def get_publication_schedule_for_network(self, network: str, network_delay_minutes: int = 60) -> List[Dict]:
         """Générer un planning de publication pour un réseau"""
         configs = self.get_schedule_configs(network)
         schedule = []
@@ -142,8 +142,8 @@ class ScheduleService:
             if not config.is_active:
                 continue
 
-            # Générer les créneaux pour cette configuration
-            available_minutes = config.get_available_minutes_in_range()
+            # Générer les créneaux pour cette configuration en utilisant le délai du réseau
+            available_minutes = config.get_available_minutes_in_range(network_delay_minutes)
             
             for minute in available_minutes:
                 hour = minute // 60
@@ -153,7 +153,7 @@ class ScheduleService:
                     "time": f"{hour:02d}:{min_val:02d}",
                     "day_type": config.day_type,
                     "network": config.network,
-                    "interval": config.interval_minutes,
+                    "interval": network_delay_minutes,  # Utilise le délai du réseau
                     "max_posts": config.max_posts_per_day
                 })
 
@@ -168,7 +168,6 @@ class ScheduleService:
                 "day_type": "weekday",
                 "start_time": "09:00",
                 "end_time": "18:00",
-                "interval_minutes": 120,  # 2h
                 "max_posts_per_day": 3
             },
             # Facebook - Weekend
@@ -177,7 +176,6 @@ class ScheduleService:
                 "day_type": "weekend",
                 "start_time": "10:00",
                 "end_time": "16:00",
-                "interval_minutes": 180,  # 3h
                 "max_posts_per_day": 2
             },
             # LinkedIn - Semaine
@@ -186,7 +184,6 @@ class ScheduleService:
                 "day_type": "weekday",
                 "start_time": "08:00",
                 "end_time": "17:00",
-                "interval_minutes": 90,  # 1h30
                 "max_posts_per_day": 4
             },
             # LinkedIn - Weekend
@@ -195,7 +192,6 @@ class ScheduleService:
                 "day_type": "weekend",
                 "start_time": "09:00",
                 "end_time": "15:00",
-                "interval_minutes": 120,  # 2h
                 "max_posts_per_day": 2
             },
             # X (Twitter) - Semaine
@@ -204,7 +200,6 @@ class ScheduleService:
                 "day_type": "weekday",
                 "start_time": "07:00",
                 "end_time": "20:00",
-                "interval_minutes": 60,  # 1h
                 "max_posts_per_day": 6
             },
             # X (Twitter) - Weekend
@@ -213,7 +208,6 @@ class ScheduleService:
                 "day_type": "weekend",
                 "start_time": "09:00",
                 "end_time": "18:00",
-                "interval_minutes": 90,  # 1h30
                 "max_posts_per_day": 4
             }
         ]

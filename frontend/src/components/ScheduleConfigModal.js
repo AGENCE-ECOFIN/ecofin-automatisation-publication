@@ -9,7 +9,6 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
     start_time: '09:00',
     end_time: '18:00',
     is_active: true,
-    interval_minutes: 120,
     max_posts_per_day: 3
   });
 
@@ -22,7 +21,7 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
   const fetchScheduleConfigs = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/schedule/?network=${network}`, {
+      const response = await fetch(`/schedule/?network=${network}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -45,7 +44,6 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
       start_time: '09:00',
       end_time: '18:00',
       is_active: true,
-      interval_minutes: 120,
       max_posts_per_day: 3
     });
   };
@@ -71,11 +69,10 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
         start_time: config.start_time,
         end_time: config.end_time,
         is_active: config.is_active,
-        interval_minutes: config.interval_minutes,
         max_posts_per_day: config.max_posts_per_day
       }));
 
-      const response = await fetch('/api/schedule/bulk-update', {
+      const response = await fetch('/schedule/bulk-update', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -204,19 +201,11 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
                     />
                   </div>
 
-                  {/* Délai entre publications */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Intervalle (min)
-                    </label>
-                    <input
-                      type="number"
-                      min="5"
-                      max="1440"
-                      value={config.interval_minutes}
-                      onChange={(e) => handleUpdateConfig(index, 'interval_minutes', parseInt(e.target.value))}
-                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    />
+                  {/* Note: L'intervalle est géré par le délai global du réseau */}
+                  <div className="col-span-2 p-3 bg-blue-50 rounded-md">
+                    <p className="text-sm text-blue-700">
+                      ℹ️ L'espacement entre publications est géré par le <strong>délai global</strong> dans "Configuration des réseaux"
+                    </p>
                   </div>
 
                   {/* Max posts par jour */}
