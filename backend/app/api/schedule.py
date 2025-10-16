@@ -94,18 +94,25 @@ def bulk_update_schedule_configs(
     """Mettre à jour plusieurs configurations en une fois"""
     schedule_service = ScheduleService(db)
     
-    # Supprimer les anciennes configurations pour ce réseau
-    existing_configs = schedule_service.get_schedule_configs(bulk_update.network)
-    for config in existing_configs:
-        schedule_service.delete_schedule_config(config.id)
-    
-    # Créer les nouvelles configurations
-    created_configs = []
-    for config_data in bulk_update.configs:
-        config = schedule_service.create_schedule_config(config_data)
-        created_configs.append(config)
+    # Utiliser la nouvelle méthode qui gère la reprogrammation automatique
+    created_configs = schedule_service.bulk_update_schedules(bulk_update.network, bulk_update.configs)
     
     return created_configs
+
+
+@router.post("/recalculate-posts/{network}")
+def recalculate_posts_for_network(
+    network: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Forcer le recalcul de tous les posts programmés pour un réseau"""
+    schedule_service = ScheduleService(db)
+    
+    # Forcer le recalcul
+    schedule_service._recalculate_posts_schedule(network)
+    
+    return {"message": f"Posts recalculés pour {network}"}
 
 
 @router.get("/status/{network}", response_model=ScheduleStatusResponse)

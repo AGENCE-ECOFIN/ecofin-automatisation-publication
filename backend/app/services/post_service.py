@@ -66,8 +66,9 @@ class PostService:
             self.db.commit()
             self.db.refresh(db_post)
             
-            # Ajouter automatiquement à la file d'attente pour chaque réseau
-            self._add_to_publication_queue(db_post)
+            # ✅ PROGRAMMER IMMÉDIATEMENT selon la logique complète
+            self._schedule_validated_post(db_post)
+            print(f"✅ Post #{post_id} validé et programmé selon les critères")
             
             return db_post
             
@@ -201,6 +202,195 @@ class PostService:
         except Exception as e:
             self.db.rollback()
             raise
+
+    def _schedule_validated_post(self, post: Post):
+        """Programmer un post validé selon la logique complète"""
+        from app.models.publication_queue import PublicationQueue
+        from app.models.network_config import NetworkConfig
+        from app.services.schedule_service import ScheduleService
+        from datetime import datetime, timezone, timedelta
+        
+        try:
+            print(f"🚀 PROGRAMMATION post #{post.id} - {post.title[:50]}...")
+            
+            # Récupérer les réseaux cibles du flux
+            target_networks = post.feed.target_networks if post.feed.target_networks else ['facebook', 'linkedin', 'x']
+            
+            # S'assurer que generated_content est un dictionnaire
+            generated_content = post.generated_content if isinstance(post.generated_content, dict) else {}
+            
+            # Récupérer la configuration du flux pour les pages
+            social_pages = post.feed.social_pages or {}
+            media_urls = [post.source_image] if post.source_image else []
+            
+            now = datetime.now(timezone.utc)
+            schedule_service = ScheduleService(self.db)
+            
+            for network in target_networks:
+                # Vérifier si le contenu généré existe pour ce réseau
+                if network not in generated_content:
+                    print(f"   ⚠️ Pas de contenu généré pour {network}")
+                    continue
+                
+                # 1. Vérifier la configuration du réseau
+                network_config = self.db.query(NetworkConfig).filter(
+                    NetworkConfig.network == network,
+                    NetworkConfig.is_active == True
+                ).first()
+                
+                if not network_config:
+                    print(f"   ⚠️ Réseau {network} non configuré, skip")
+                    continue
+                
+                # 2. Vérifier les horaires d'ouverture
+                schedule_status = schedule_service.is_publication_allowed_now(network)
+                print(f"   📊 Horaires {network}: {schedule_status}")
+                
+                # 3. Calculer l'heure de programmation
+                delay_minutes = network_config.default_publication_delay
+                
+                # FIFO PAR FEED : Vérifier le dernier post du même feed
+                last_scheduled = self.db.query(PublicationQueue).filter(
+                    PublicationQueue.feed_id == post.feed_id,
+                    PublicationQueue.network == network,
+                    PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+                ).order_by(PublicationQueue.scheduled_at.desc()).first()
+                
+                if last_scheduled and last_scheduled.scheduled_at:
+                    # Programmer APRÈS le dernier post + délai
+                    base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                    print(f"   🔄 FIFO: Après post #{last_scheduled.id} à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                else:
+                    # Premier post du feed
+                    base_time = now + timedelta(minutes=delay_minutes)
+                    print(f"   ✨ Premier post du feed #{post.feed_id} sur {network}")
+                
+                # 4. Ajuster selon les horaires configurés
+                scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                print(f"   📅 Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
+                
+                # 5. Déterminer le statut initial
+                config = schedule_service.get_active_config_for_network_now(network)
+                if config and config.is_active:
+                    if config.is_time_in_range(scheduled_time.hour, scheduled_time.minute):
+                        status = "SCHEDULED"  # Programmé dans les horaires
+                    else:
+                        status = "WAITING_HOURS"  # En attente d'horaires
+                else:
+                    status = "SCHEDULED"  # Pas de config horaire
+                
+                # 6. Page de destination
+                destination_id = social_pages.get(network, '')
+                
+                # Fallback Facebook si nécessaire
+                if network == 'facebook' and not destination_id:
+                    import json
+                    import os
+                    try:
+                        blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
+                        with open(blotato_file, 'r') as f:
+                            blotato_accounts = json.load(f)
+                            facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
+                            if facebook_pages:
+                                destination_id = facebook_pages[0]['id']
+                                print(f"   ⚠️ Fallback Facebook: {facebook_pages[0]['name']}")
+                    except Exception as e:
+                        print(f"   ❌ Erreur fallback Facebook: {e}")
+                
+                if network == 'facebook' and not destination_id:
+                    print(f"   ❌ Pas de page Facebook, skip")
+                    continue
+                
+                # 7. Créer l'entrée de queue
+                queue_item = PublicationQueue(
+                    post_id=post.id,
+                    feed_id=post.feed_id,
+                    network=network,
+                    content=generated_content[network],
+                    media_urls=media_urls,
+                    scheduled_at=scheduled_time,
+                    target_page_id=destination_id,
+                    status=status,
+                    is_paused=False
+                )
+                self.db.add(queue_item)
+                
+                print(f"   ✅ PROGRAMMÉ {network}: {status} à {scheduled_time.strftime('%H:%M')} - Page: {destination_id}")
+            
+            self.db.commit()
+            print(f"✅ Post #{post.id} programmé pour {len(target_networks)} réseau(x)")
+            
+        except Exception as e:
+            self.db.rollback()
+            print(f"❌ Erreur programmation post #{post.id}: {e}")
+            raise
+
+    def _check_if_post_ready_for_queue(self, post: Post, network: str) -> dict:
+        """Vérifier si un post validé est prêt à être ajouté à la queue de publication"""
+        from app.models.network_config import NetworkConfig
+        from app.services.schedule_service import ScheduleService
+        from app.models.publication_queue import PublicationQueue
+        from datetime import datetime, timezone, timedelta
+        
+        try:
+            # 1. Vérifier la configuration du réseau
+            network_config = self.db.query(NetworkConfig).filter(
+                NetworkConfig.network == network,
+                NetworkConfig.is_active == True
+            ).first()
+            
+            if not network_config:
+                return {"ready": False, "reason": f"Réseau {network} non configuré"}
+            
+            # 2. Vérifier les horaires
+            schedule_service = ScheduleService(self.db)
+            schedule_status = schedule_service.is_publication_allowed_now(network)
+            
+            if not schedule_status["allowed"]:
+                return {"ready": False, "reason": f"Horaires fermés: {schedule_status['reason']}"}
+            
+            # 3. Vérifier le délai depuis le dernier post du même feed
+            delay_minutes = network_config.default_publication_delay
+            now = datetime.now(timezone.utc)
+            
+            last_scheduled = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.network == network,
+                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+            ).order_by(PublicationQueue.scheduled_at.desc()).first()
+            
+            if last_scheduled and last_scheduled.scheduled_at:
+                # Calculer l'heure minimum pour le prochain post
+                min_next_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                
+                if now < min_next_time:
+                    remaining = min_next_time - now
+                    return {"ready": False, "reason": f"Délai insuffisant, reste {remaining}"}
+            
+            # 4. Vérifier la page de destination (pour Facebook)
+            if network == 'facebook':
+                social_pages = post.feed.social_pages or {}
+                destination_id = social_pages.get(network, '')
+                
+                if not destination_id:
+                    # Vérifier le fallback
+                    import json
+                    import os
+                    try:
+                        blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
+                        with open(blotato_file, 'r') as f:
+                            blotato_accounts = json.load(f)
+                            facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
+                            if not facebook_pages:
+                                return {"ready": False, "reason": "Pas de page Facebook configurée"}
+                    except:
+                        return {"ready": False, "reason": "Configuration Facebook manquante"}
+            
+            # Tous les critères sont OK
+            return {"ready": True, "reason": "Prêt à publier"}
+            
+        except Exception as e:
+            return {"ready": False, "reason": f"Erreur: {str(e)}"}
 
     def get_posts_queue(self) -> List[Post]:
         """Récupère les posts validés en attente de publication"""

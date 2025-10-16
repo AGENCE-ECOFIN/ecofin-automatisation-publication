@@ -25,9 +25,17 @@ celery_app.conf.update(
             'task': 'app.workers.tasks.process_all_active_feeds',
             'schedule': 300.0,  # Toutes les 5 minutes - Vérifie quels flux doivent être collectés
         },
+        'manage-state-transitions': {
+            'task': 'app.workers.tasks.manage_post_state_transitions',
+            'schedule': 5.0,  # Toutes les 5 secondes - Gère les transitions de statut
+        },
         'process-publication-queue': {
             'task': 'app.workers.tasks.process_publication_queue',
-            'schedule': 60.0,  # Toutes les 1 minute - Traite la file de publication
+            'schedule': 5.0,  # Toutes les 5 secondes - Traite la file de publication
+        },
+        'recovery-failed-publications': {
+            'task': 'app.workers.tasks.recovery_failed_publications',
+            'schedule': 60.0,  # Toutes les minutes - Rattrapage des posts bloqués
         },
     },
 )

@@ -19,16 +19,32 @@ const UnifiedPublication = () => {
   const [networkFilter, setNetworkFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [, forceUpdate] = useState();
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const queryClient = useQueryClient();
   
-  // Rafraîchir chaque seconde pour mettre à jour le chrono
+  // Rafraîchir chaque seconde pour mettre à jour le chrono ET les statuts
   useEffect(() => {
     const interval = setInterval(() => {
+      // Rafraîchir les données de la queue pour mettre à jour les statuts
+      queryClient.invalidateQueries('publication-queue');
+      // Mettre à jour l'heure de rafraîchissement
+      setLastRefresh(new Date());
+      // Rafraîchir l'affichage
       forceUpdate({});
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [queryClient]);
+  
+  // Rafraîchir les données moins fréquemment (toutes les 10 secondes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Rafraîchir les feeds et réseaux moins fréquemment
+      queryClient.invalidateQueries('feeds');
+      queryClient.invalidateQueries('networks');
+    }, 10000); // 10 secondes
+    return () => clearInterval(interval);
+  }, [queryClient]);
   
   // Toast simple
   const showToast = (message, type = 'info') => {
@@ -1369,10 +1385,35 @@ const UnifiedPublication = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Gestion des publications</h1>
-          <p className="text-gray-600 mt-2">
-            Gérez votre file d'attente de publication et créez des posts directs
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Gestion des publications</h1>
+              <p className="text-gray-600 mt-2">
+                Gérez votre file d'attente de publication et créez des posts directs
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => {
+                    queryClient.invalidateQueries();
+                    setLastRefresh(new Date());
+                    showToast('🔄 Données rafraîchies');
+                  }}
+                  className="px-3 py-1 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200 transition-colors text-sm"
+                >
+                  🔄 Actualiser
+                </button>
+                <div className="flex items-center space-x-2 text-sm text-gray-500">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span>En temps réel</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Dernière MAJ: {format(lastRefresh, 'HH:mm:ss')}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Navigation par onglets */}
