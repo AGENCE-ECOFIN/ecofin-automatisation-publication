@@ -133,6 +133,42 @@ class ScheduleService:
 
         return "Maintenant"
 
+    def _adjust_time_to_schedule(self, network: str, target_time: datetime) -> datetime:
+        """Ajuster une heure cible pour qu'elle soit dans un créneau autorisé"""
+        config = self.get_active_config_for_network_now(network)
+        
+        if not config:
+            # Pas de config horaire, utiliser l'heure telle quelle
+            return target_time
+        
+        if not config.is_active:
+            # Config désactivée, utiliser l'heure telle quelle
+            return target_time
+        
+        # Vérifier si l'heure cible est dans un créneau autorisé
+        if config.is_time_in_range(target_time.hour, target_time.minute):
+            return target_time
+        
+        # L'heure n'est pas autorisée, chercher le prochain créneau
+        start_hour, start_min = map(int, config.start_time.split(':'))
+        
+        # Si on est avant l'heure de début aujourd'hui
+        today_start = target_time.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+        if target_time < today_start:
+            return today_start
+        
+        # Si on est après l'heure de fin aujourd'hui, programmer pour le lendemain
+        end_hour, end_min = map(int, config.end_time.split(':'))
+        today_end = target_time.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+        if target_time > today_end:
+            tomorrow = target_time + timedelta(days=1)
+            return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+        
+        # Si on est dans la journée mais hors créneau, programmer au prochain créneau
+        # Pour l'instant, programmer au début du créneau du lendemain
+        tomorrow = target_time + timedelta(days=1)
+        return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+
     def get_publication_schedule_for_network(self, network: str, network_delay_minutes: int = 60) -> List[Dict]:
         """Générer un planning de publication pour un réseau"""
         configs = self.get_schedule_configs(network)

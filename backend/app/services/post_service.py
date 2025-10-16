@@ -107,6 +107,17 @@ class PostService:
                         print(f"⚠️ Réseau {network} non configuré ou inactif, skip")
                         continue
                     
+                    # ✅ Vérifier les horaires configurés pour ce réseau
+                    from app.services.schedule_service import ScheduleService
+                    schedule_service = ScheduleService(self.db)
+                    schedule_status = schedule_service.is_publication_allowed_now(network)
+                    
+                    if not schedule_status["allowed"]:
+                        print(f"⏰ Publication {network} reportée: {schedule_status['reason']}")
+                        if schedule_status["next_available"]:
+                            print(f"   Prochaine publication possible: {schedule_status['next_available']}")
+                        continue
+                    
                     # Délai : depuis la config GLOBALE
                     delay_minutes = network_config.default_publication_delay
                     
@@ -119,13 +130,17 @@ class PostService:
                     
                     if last_scheduled and last_scheduled.scheduled_at:
                         # Programmer APRÈS le dernier post programmé + le délai
-                        scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                        base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
                         print(f"🔄 FIFO: Dernier post de ce feed sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                        print(f"   → Nouveau post programmé à {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
+                        print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
                     else:
                         # Pas de post en attente, programmer normalement
-                        scheduled_time = now + timedelta(minutes=delay_minutes)
-                        print(f"✨ Premier post de ce feed sur {network}, programmé à {scheduled_time.strftime('%H:%M')}")
+                        base_time = now + timedelta(minutes=delay_minutes)
+                        print(f"✨ Premier post de ce feed sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
+                    
+                    # Vérifier si cette heure est dans un créneau autorisé et ajuster si nécessaire
+                    scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                    print(f"📅 Heure finale programmée: {scheduled_time.strftime('%H:%M')}")
                     
                     # Page : depuis la config DU FLUX
                     destination_id = social_pages.get(network, '')
