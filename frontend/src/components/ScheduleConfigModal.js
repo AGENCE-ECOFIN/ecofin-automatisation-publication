@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaTimes, FaPlus, FaTrash, FaSave, FaClock, FaCalendarAlt } from 'react-icons/fa';
+import { api } from '../services/api';
 
 const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
   const [configs, setConfigs] = useState([]);
@@ -21,15 +22,8 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
   const fetchScheduleConfigs = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/schedule/?network=${network}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setConfigs(data);
-      }
+      const response = await api.get(`/schedule/?network=${network}`);
+      setConfigs(response.data);
     } catch (error) {
       console.error('Erreur lors du chargement des horaires:', error);
     } finally {
@@ -72,24 +66,13 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
         max_posts_per_day: config.max_posts_per_day
       }));
 
-      const response = await fetch('/schedule/bulk-update', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          network: network,
-          configs: configsToSave
-        })
+      const response = await api.post('/schedule/bulk-update', {
+        network: network,
+        configs: configsToSave
       });
 
-      if (response.ok) {
-        onSave();
-        onClose();
-      } else {
-        alert('Erreur lors de la sauvegarde');
-      }
+      onSave();
+      onClose();
     } catch (error) {
       console.error('Erreur:', error);
       alert('Erreur lors de la sauvegarde');
