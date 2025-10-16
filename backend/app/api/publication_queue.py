@@ -114,9 +114,30 @@ def resume_queue_item(
     
     # Recalculer scheduled_at = maintenant + temps restant
     now = datetime.now(timezone.utc)
-    item.scheduled_at = now + timedelta(seconds=remaining_seconds)
+    new_scheduled_time = now + timedelta(seconds=remaining_seconds)
+    
+    # 🔄 VÉRIFIER LES HORAIRES : Si la reprise est hors horaires, ajuster
+    from app.services.schedule_service import ScheduleService
+    schedule_service = ScheduleService(db)
+    adjusted_time = schedule_service._adjust_time_to_schedule(item.network, new_scheduled_time)
+    
+    # Si l'heure a été ajustée (hors horaires), recalculer le statut
+    if adjusted_time != new_scheduled_time:
+        print(f"   🕐 Reprise hors horaires: {new_scheduled_time.strftime('%H:%M')} → {adjusted_time.strftime('%H:%M')}")
+        config = schedule_service.get_active_config_for_network_now(item.network)
+        if config and config.is_active:
+            if config.is_time_in_range(adjusted_time.hour, adjusted_time.minute):
+                item.status = "SCHEDULED"
+            else:
+                item.status = "WAITING_HOURS"
+        else:
+            item.status = "SCHEDULED"
+    else:
+        # Reprise dans les horaires, peut être publié immédiatement
+        item.status = "PENDING"
+    
+    item.scheduled_at = adjusted_time
     item.is_paused = False
-    item.status = "PENDING"
     
     # Nettoyer les données de pause
     if 'paused_at' in extra_data:

@@ -12,7 +12,6 @@ class ScheduleConfigBase(BaseModel):
     start_time: str = Field(..., description="Heure de début (format HH:MM)")
     end_time: str = Field(..., description="Heure de fin (format HH:MM)")
     is_active: bool = Field(True, description="Activer/désactiver ce créneau")
-    interval_minutes: int = Field(30, ge=5, le=1440, description="Délai entre publications (minutes)")
     max_posts_per_day: int = Field(5, ge=1, le=50, description="Maximum de publications par jour")
     specific_days: Optional[List[int]] = Field(None, description="Jours spécifiques (0-6, 0=Lundi)")
     period_start: Optional[datetime] = Field(None, description="Début de période spéciale")
@@ -79,7 +78,6 @@ class ScheduleConfigUpdate(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     is_active: Optional[bool] = None
-    interval_minutes: Optional[int] = Field(None, ge=5, le=1440)
     max_posts_per_day: Optional[int] = Field(None, ge=1, le=50)
     specific_days: Optional[List[int]] = None
     period_start: Optional[datetime] = None

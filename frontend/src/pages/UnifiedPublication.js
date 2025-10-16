@@ -19,16 +19,32 @@ const UnifiedPublication = () => {
   const [networkFilter, setNetworkFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [, forceUpdate] = useState();
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const queryClient = useQueryClient();
   
-  // Rafraîchir chaque seconde pour mettre à jour le chrono
+  // Rafraîchir chaque seconde pour mettre à jour le chrono ET les statuts
   useEffect(() => {
     const interval = setInterval(() => {
+      // Rafraîchir les données de la queue pour mettre à jour les statuts
+      queryClient.invalidateQueries('publication-queue');
+      // Mettre à jour l'heure de rafraîchissement
+      setLastRefresh(new Date());
+      // Rafraîchir l'affichage
       forceUpdate({});
     }, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [queryClient]);
+  
+  // Rafraîchir les données moins fréquemment (toutes les 10 secondes)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Rafraîchir les feeds et réseaux moins fréquemment
+      queryClient.invalidateQueries('feeds');
+      queryClient.invalidateQueries('networks');
+    }, 10000); // 10 secondes
+    return () => clearInterval(interval);
+  }, [queryClient]);
   
   // Toast simple
   const showToast = (message, type = 'info') => {
@@ -276,19 +292,13 @@ const UnifiedPublication = () => {
       // Filtre par statut
       if (statusFilter) {
         if (statusFilter === 'PAUSED' && !item.is_paused) return false;
-        if (statusFilter === 'SCHEDULED') {
-          if (item.status !== 'PENDING' || item.is_paused) return false;
-          const timeInfo = getTimeRemaining(item.scheduled_at);
-          return timeInfo?.isScheduled;
-        }
-        if (statusFilter === 'PENDING') {
-          if (item.status !== 'PENDING' || item.is_paused) return false;
-          const timeInfo = getTimeRemaining(item.scheduled_at);
-          return !timeInfo?.isScheduled;
-        }
-        if (statusFilter !== 'PAUSED' && statusFilter !== 'SCHEDULED' && statusFilter !== 'PENDING' && item.status !== statusFilter) {
-          return false;
-        }
+        if (statusFilter === 'SCHEDULED' && item.status !== 'SCHEDULED') return false;
+        if (statusFilter === 'WAITING_HOURS' && item.status !== 'WAITING_HOURS') return false;
+        if (statusFilter === 'PENDING' && item.status !== 'PENDING') return false;
+        if (statusFilter === 'PUBLISHING' && item.status !== 'PUBLISHING') return false;
+        if (statusFilter === 'PUBLISHED' && item.status !== 'PUBLISHED') return false;
+        if (statusFilter === 'FAILED' && item.status !== 'FAILED') return false;
+        if (statusFilter === 'CANCELLED' && item.status !== 'CANCELLED') return false;
       }
       
       return true;
@@ -297,27 +307,40 @@ const UnifiedPublication = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'PENDING': return <FaClock className="text-yellow-500" />;
       case 'SCHEDULED': return <FaClock className="text-blue-500" />;
+      case 'WAITING_HOURS': return <FaClock className="text-purple-500" />;
+      case 'PENDING': return <FaPlay className="text-yellow-500" />;
       case 'PUBLISHING': return <FaPlay className="text-indigo-500" />;
       case 'PUBLISHED': return <FaCheck className="text-green-500" />;
       case 'FAILED': return <FaTimes className="text-red-500" />;
       case 'CANCELLED': return <FaPause className="text-gray-500" />;
-      case 'PAUSED': return <FaPause className="text-orange-500" />;
       default: return <FaClock className="text-gray-500" />;
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'PENDING': return 'bg-yellow-100 text-yellow-800';
       case 'SCHEDULED': return 'bg-blue-100 text-blue-800';
+      case 'WAITING_HOURS': return 'bg-purple-100 text-purple-800';
+      case 'PENDING': return 'bg-yellow-100 text-yellow-800';
       case 'PUBLISHING': return 'bg-indigo-100 text-indigo-800';
       case 'PUBLISHED': return 'bg-green-100 text-green-800';
       case 'FAILED': return 'bg-red-100 text-red-800';
       case 'CANCELLED': return 'bg-gray-100 text-gray-800';
-      case 'PAUSED': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'SCHEDULED': return '📅 Programmés';
+      case 'WAITING_HOURS': return '🕐 En attente d\'horaires';
+      case 'PENDING': return '⏳ Prêts à publier';
+      case 'PUBLISHING': return '⚡ En cours';
+      case 'PUBLISHED': return '✅ Publiés';
+      case 'FAILED': return '❌ Échecs';
+      case 'CANCELLED': return '🚫 Annulés';
+      default: return '❓ Inconnu';
     }
   };
 
@@ -371,23 +394,21 @@ const UnifiedPublication = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
           <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-blue-700 mb-1">
-              {queueItems.filter(item => {
-                if (item.status !== 'PENDING' || item.is_paused) return false;
-                const timeInfo = getTimeRemaining(item.scheduled_at);
-                return timeInfo?.isScheduled;
-              }).length}
-          </div>
+              {queueItems.filter(item => item.status === 'SCHEDULED' && !item.is_paused).length}
+            </div>
             <div className="text-sm font-medium text-blue-600">📅 Programmés</div>
+          </div>
+          <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
+            <div className="text-3xl font-bold text-purple-700 mb-1">
+              {queueItems.filter(item => item.status === 'WAITING_HOURS' && !item.is_paused).length}
+            </div>
+            <div className="text-sm font-medium text-purple-600">🕐 En attente d'horaires</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl border-2 border-yellow-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-yellow-700 mb-1">
-              {queueItems.filter(item => {
-                if (item.status !== 'PENDING' || item.is_paused) return false;
-                const timeInfo = getTimeRemaining(item.scheduled_at);
-                return !timeInfo?.isScheduled;
-              }).length}
+              {queueItems.filter(item => item.status === 'PENDING' && !item.is_paused).length}
           </div>
-            <div className="text-sm font-medium text-yellow-600">⏳ En attente</div>
+            <div className="text-sm font-medium text-yellow-600">⏳ Prêts à publier</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-orange-700 mb-1">{queueItems.filter(item => item.is_paused).length}</div>
@@ -458,7 +479,8 @@ const UnifiedPublication = () => {
               >
                 <option value="">Tous les statuts</option>
                 <option value="SCHEDULED">📅 Programmés</option>
-                <option value="PENDING">⏳ En attente</option>
+                <option value="WAITING_HOURS">🕐 En attente d'horaires</option>
+                <option value="PENDING">⏳ Prêts à publier</option>
                 <option value="PAUSED">⏸️ En pause</option>
                 <option value="PUBLISHING">⚡ En cours</option>
                 <option value="PUBLISHED">✅ Publiés</option>
@@ -516,6 +538,10 @@ const UnifiedPublication = () => {
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Statut
                 </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <span className="hidden sm:inline">Countdown</span>
+                  <span className="sm:hidden">Temps</span>
+                </th>
                 <th className="hidden md:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Planifié
                 </th>
@@ -546,51 +572,43 @@ const UnifiedPublication = () => {
                       <span className="text-sm font-medium text-gray-900 capitalize hidden sm:inline">
                         {item.network}
                       </span>
+                      <div className="ml-2">
+                        {item.is_paused && <span className="text-orange-600 font-medium text-xs">⏸️ En pause</span>}
+                      </div>
                     </div>
                   </td>
+                  {/* Colonne Statut */}
+                  <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                      {getStatusIcon(item.status)}
+                      <span className="ml-1 hidden sm:inline">{getStatusText(item.status)}</span>
+                    </span>
+                  </td>
+                  
+                  {/* Colonne Countdown */}
                   <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                     {item.is_paused ? (
                       <div className="flex flex-col">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          <FaPause className="text-orange-500 mr-1" />
-                          <span className="hidden sm:inline">EN PAUSE</span>
-                    </span>
-                        {/* Pas de countdown si en pause */}
-                        <span className="text-xs mt-1 text-orange-600">
+                        <span className="text-xs text-orange-600">
                           ⏸️ Chrono arrêté
                         </span>
                       </div>
-                    ) : item.status === 'PENDING' ? (
+                    ) : (item.status === 'PENDING' || item.status === 'SCHEDULED' || item.status === 'WAITING_HOURS') ? (
                       (() => {
                         const timeInfo = getTimeRemaining(item.scheduled_at);
-                        const isScheduled = timeInfo?.isScheduled;
                         
                         return (
                           <div className="flex flex-col">
-                            {isScheduled ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                <FaClock className="text-blue-500 mr-1" />
-                                <span className="hidden sm:inline">PROGRAMMÉ</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <FaClock className="text-yellow-500 mr-1" />
-                                <span className="hidden sm:inline">EN ATTENTE</span>
-                              </span>
-                            )}
                             {timeInfo && (
-                              <span className={`text-xs mt-1 ${timeInfo.class}`}>
-                                {timeInfo.isPast ? '⚡ ' : '⏱️ '}{timeInfo.text}
+                              <span className={`text-xs ${timeInfo.class}`}>
+                                {timeInfo.isPast ? '⚡ Prêt à publier' : `⏱️ ${timeInfo.text}`}
                               </span>
                             )}
                           </div>
                         );
                       })()
                     ) : (
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
-                        {getStatusIcon(item.status)}
-                        <span className="ml-1 hidden sm:inline">{item.status}</span>
-                      </span>
+                      <span className="text-xs text-gray-500">-</span>
                     )}
                   </td>
                   <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1367,10 +1385,35 @@ const UnifiedPublication = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Gestion des publications</h1>
-          <p className="text-gray-600 mt-2">
-            Gérez votre file d'attente de publication et créez des posts directs
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Gestion des publications</h1>
+              <p className="text-gray-600 mt-2">
+                Gérez votre file d'attente de publication et créez des posts directs
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => {
+                    queryClient.invalidateQueries();
+                    setLastRefresh(new Date());
+                    showToast('🔄 Données rafraîchies');
+                  }}
+                  className="px-3 py-1 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200 transition-colors text-sm"
+                >
+                  🔄 Actualiser
+                </button>
+                <div className="flex items-center space-x-2 text-sm text-gray-500">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span>En temps réel</span>
+                </div>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                Dernière MAJ: {format(lastRefresh, 'HH:mm:ss')}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Navigation par onglets */}

@@ -219,6 +219,124 @@ def process_all_active_feeds():
 
 
 @celery_app.task
+def manage_post_state_transitions():
+    """Gérer les transitions de statut des posts : SCHEDULED → WAITING_HOURS → PENDING → PUBLISHING"""
+    from app.models.publication_queue import PublicationQueue
+    from app.services.schedule_service import ScheduleService
+    from datetime import datetime, timezone
+    
+    db = SessionLocal()
+    try:
+        print("🔄 Gestion des transitions de statut...")
+        schedule_service = ScheduleService(db)
+        now = datetime.now(timezone.utc)
+        
+        # 1. SCHEDULED → PENDING si l'heure est atteinte et horaires OK
+        scheduled_items = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'SCHEDULED',
+            PublicationQueue.is_paused == False,
+            PublicationQueue.scheduled_at <= now
+        ).all()
+        
+        for item in scheduled_items:
+            schedule_status = schedule_service.is_publication_allowed_now(item.network)
+            if schedule_status["allowed"]:
+                item.status = 'PENDING'
+                print(f"   ✅ #{item.id} SCHEDULED → PENDING (heure atteinte + horaires OK)")
+            else:
+                # Reporter au prochain créneau autorisé
+                config = schedule_service.get_active_config_for_network_now(item.network)
+                if config:
+                    next_time = schedule_service._get_next_available_time(config, now)
+                    if next_time != "Maintenant":
+                        try:
+                            hour, minute = map(int, next_time.split(':'))
+                            new_scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                            item.scheduled_at = new_scheduled
+                            item.status = 'WAITING_HOURS'
+                            print(f"   🕐 #{item.id} reporté à {next_time} (WAITING_HOURS)")
+                        except:
+                            pass
+        
+        # 2. WAITING_HOURS → SCHEDULED si horaires ouverts
+        waiting_items = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'WAITING_HOURS',
+            PublicationQueue.is_paused == False
+        ).all()
+        
+        for item in waiting_items:
+            schedule_status = schedule_service.is_publication_allowed_now(item.network)
+            if schedule_status["allowed"]:
+                # Vérifier si l'heure programmée est dans le futur
+                if item.scheduled_at > now:
+                    item.status = 'SCHEDULED'
+                    print(f"   🕐 #{item.id} WAITING_HOURS → SCHEDULED (horaires OK)")
+                elif item.scheduled_at <= now:
+                    item.status = 'PENDING'
+                    print(f"   ⏰ #{item.id} WAITING_HOURS → PENDING (heure dépassée + horaires OK)")
+        
+        db.commit()
+        print(f"✅ Transitions gérées: {len(scheduled_items)} SCHEDULED, {len(waiting_items)} WAITING_HOURS")
+        
+    except Exception as e:
+        print(f"❌ Erreur transitions de statut: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@celery_app.task
+def recovery_failed_publications():
+    """Tâche de rattrapage pour les posts qui n'ont pas été publiés"""
+    from app.models.publication_queue import PublicationQueue
+    from app.services.schedule_service import ScheduleService
+    from datetime import datetime, timezone, timedelta
+    
+    db = SessionLocal()
+    try:
+        print("🔧 Tâche de rattrapage...")
+        now = datetime.now(timezone.utc)
+        
+        # Posts PENDING depuis plus de 5 minutes (probablement bloqués)
+        stuck_pending = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'PENDING',
+            PublicationQueue.is_paused == False,
+            PublicationQueue.created_at <= now - timedelta(minutes=5)
+        ).all()
+        
+        for item in stuck_pending:
+            print(f"   🔧 Post #{item.id} bloqué en PENDING depuis {item.created_at}")
+            # Forcer la publication
+            item.status = 'PENDING'  # Reste PENDING pour être repris par process_publication_queue
+            print(f"   ✅ Post #{item.id} marqué pour reprise")
+        
+        # Posts PUBLISHING depuis plus de 10 minutes (probablement en erreur)
+        stuck_publishing = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'PUBLISHING',
+            PublicationQueue.created_at <= now - timedelta(minutes=10)
+        ).all()
+        
+        for item in stuck_publishing:
+            print(f"   🔧 Post #{item.id} bloqué en PUBLISHING depuis {item.created_at}")
+            # Marquer comme échec et reprogrammer
+            item.status = 'FAILED'
+            item.error_message = "Timeout - Publication bloquée plus de 10 minutes"
+            print(f"   ❌ Post #{item.id} marqué comme échec")
+        
+        if stuck_pending or stuck_publishing:
+            db.commit()
+            print(f"✅ Rattrapage: {len(stuck_pending)} PENDING, {len(stuck_publishing)} PUBLISHING traités")
+        else:
+            print("✅ Aucun post bloqué détecté")
+        
+    except Exception as e:
+        print(f"❌ Erreur tâche de rattrapage: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@celery_app.task
 def process_publication_queue():
     """
     Tâche pour traiter la file d'attente de publication
@@ -236,11 +354,57 @@ def process_publication_queue():
         schedule_service = ScheduleService(db)
         
         # Récupérer tous les posts en attente dont l'heure de publication est passée
+        # 1. Mettre à jour les statuts SCHEDULED vers PENDING si l'heure est atteinte
+        scheduled_items = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'SCHEDULED',
+            PublicationQueue.is_paused == False,
+            PublicationQueue.scheduled_at <= now
+        ).all()
+        
+        for item in scheduled_items:
+            # Vérifier si on est dans les horaires autorisés
+            schedule_status = schedule_service.is_publication_allowed_now(item.network)
+            if schedule_status["allowed"]:
+                item.status = 'PENDING'
+                print(f"⏰ Statut mis à jour: {item.network} #{item.id} SCHEDULED → PENDING (horaires OK)")
+            else:
+                # Reporter au prochain créneau autorisé
+                config = schedule_service.get_active_config_for_network_now(item.network)
+                next_time = schedule_service._get_next_available_time(config, now)
+                if next_time != "Maintenant":
+                    from datetime import datetime
+                    # Parser next_time et mettre à jour scheduled_at
+                    try:
+                        hour, minute = map(int, next_time.split(':'))
+                        new_scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        item.scheduled_at = new_scheduled
+                        print(f"🕐 Repoussé: {item.network} #{item.id} vers {next_time}")
+                    except:
+                        pass
+        
+        # 2. Mettre à jour les statuts WAITING_HOURS vers SCHEDULED si horaires atteints
+        waiting_items = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'WAITING_HOURS',
+            PublicationQueue.is_paused == False
+        ).all()
+        
+        for item in waiting_items:
+            schedule_status = schedule_service.is_publication_allowed_now(item.network)
+            if schedule_status["allowed"] and item.scheduled_at <= now:
+                item.status = 'PENDING'
+                print(f"🕐 Statut mis à jour: {item.network} #{item.id} WAITING_HOURS → PENDING (horaires atteints)")
+            elif schedule_status["allowed"]:
+                item.status = 'SCHEDULED'
+                print(f"🕐 Statut mis à jour: {item.network} #{item.id} WAITING_HOURS → SCHEDULED (horaires OK)")
+        
+        db.commit()
+        
+        # 3. Récupérer les items PENDING prêts à publier
         pending_items = db.query(PublicationQueue).filter(
             PublicationQueue.status == 'PENDING',
             PublicationQueue.is_paused == False,
-            PublicationQueue.scheduled_at <= now  # L'heure programmée est passée
-        ).order_by(PublicationQueue.scheduled_at.asc()).limit(10).all()  # Limiter à 10 par cycle
+            PublicationQueue.scheduled_at <= now
+        ).order_by(PublicationQueue.scheduled_at.asc()).limit(10).all()
         
         processed_count = 0
         publication_service = PublicationService()
@@ -249,13 +413,10 @@ def process_publication_queue():
             try:
                 print(f"📤 Publication #{item.id} sur {item.network} (programmée pour {item.scheduled_at})")
                 
-                # Vérifier si la publication est autorisée selon les horaires
-                schedule_status = schedule_service.is_publication_allowed_now(item.network)
-                if not schedule_status["allowed"]:
-                    print(f"⏰ Publication #{item.id} reportée: {schedule_status['reason']}")
-                    if schedule_status["next_available"]:
-                        print(f"   Prochaine publication possible: {schedule_status['next_available']}")
-                    continue
+                # Les posts PENDING sont prêts à publier, pas besoin de vérifier les horaires
+                # (ils ont déjà été vérifiés lors de la transition SCHEDULED -> PENDING)
+                
+                print(f"🚀 DÉBUT publication #{item.id} sur {item.network}")
                 
                 # Marquer comme en cours de publication
                 item.status = 'PUBLISHING'
