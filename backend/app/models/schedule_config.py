@@ -81,7 +81,6 @@ class ScheduleConfig(Base):
             'start_time': self.start_time,
             'end_time': self.end_time,
             'is_active': self.is_active,
-            'interval_minutes': self.interval_minutes,
             'max_posts_per_day': self.max_posts_per_day,
             'specific_days': self.specific_days,
             'period_start': self.period_start.isoformat() if self.period_start else None,

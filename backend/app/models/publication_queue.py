@@ -22,7 +22,7 @@ class PublicationQueue(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)
     
     # Statut et contrôle
-    status = Column(String, default="PENDING")  # PENDING, SCHEDULED, PUBLISHING, PUBLISHED, FAILED, CANCELLED
+    status = Column(String, default="SCHEDULED")  # SCHEDULED, WAITING_HOURS, PENDING, PUBLISHING, PUBLISHED, FAILED, CANCELLED
     is_paused = Column(Boolean, default=False)
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)

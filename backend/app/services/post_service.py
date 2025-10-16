@@ -52,8 +52,10 @@ class PostService:
 
     def validate_post(self, post_id: int, post_validate: PostValidate, user_id: int) -> Optional[Post]:
         try:
+            print(f"🚀 DÉBUT validate_post pour post #{post_id} par user #{user_id}")
             db_post = self.get_post_by_id(post_id)
             if not db_post:
+                print(f"❌ Post #{post_id} non trouvé")
                 return None
 
             db_post.generated_content = post_validate.generated_content
@@ -79,6 +81,7 @@ class PostService:
         Utilise les délais et pages configurés dans le flux (DYNAMIQUE)
         """
         try:
+            print(f"🚀 DÉBUT _add_to_publication_queue pour post #{post.id} - Feed #{post.feed_id}")
             from app.models.publication_queue import PublicationQueue
             from datetime import timedelta, timezone
             
@@ -112,35 +115,46 @@ class PostService:
                     schedule_service = ScheduleService(self.db)
                     schedule_status = schedule_service.is_publication_allowed_now(network)
                     
-                    if not schedule_status["allowed"]:
-                        print(f"⏰ Publication {network} reportée: {schedule_status['reason']}")
-                        if schedule_status["next_available"]:
-                            print(f"   Prochaine publication possible: {schedule_status['next_available']}")
-                        continue
+                    print(f"📊 Statut horaires pour {network}: {schedule_status}")
                     
                     # Délai : depuis la config GLOBALE
                     delay_minutes = network_config.default_publication_delay
                     
-                    # 🔥 FIFO : Vérifier s'il y a déjà des posts de CE FEED sur CE RÉSEAU en attente
+                    # 🔥 FIFO PAR FEED : Vérifier s'il y a déjà des posts programmés sur CE RÉSEAU pour CE FEED
                     last_scheduled = self.db.query(PublicationQueue).filter(
                         PublicationQueue.feed_id == post.feed_id,
                         PublicationQueue.network == network,
-                        PublicationQueue.status.in_(['PENDING', 'PUBLISHING'])
+                        PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
                     ).order_by(PublicationQueue.scheduled_at.desc()).first()
                     
                     if last_scheduled and last_scheduled.scheduled_at:
                         # Programmer APRÈS le dernier post programmé + le délai
                         base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                        print(f"🔄 FIFO: Dernier post de ce feed sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                        print(f"🔄 FIFO FEED: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
                         print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
                     else:
-                        # Pas de post en attente, programmer normalement
+                        # Pas de post en attente pour ce feed, programmer normalement
                         base_time = now + timedelta(minutes=delay_minutes)
-                        print(f"✨ Premier post de ce feed sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
+                        print(f"✨ Premier post du feed #{post.feed_id} sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
                     
                     # Vérifier si cette heure est dans un créneau autorisé et ajuster si nécessaire
                     scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
                     print(f"📅 Heure finale programmée: {scheduled_time.strftime('%H:%M')}")
+                    
+                    # Déterminer le statut selon l'heure programmée et les horaires configurés
+                    # Vérifier si l'heure programmée est dans un créneau autorisé
+                    config = schedule_service.get_active_config_for_network_now(network)
+                    if config and config.is_active:
+                        # Si configuré, vérifier si l'heure programmée est dans les horaires
+                        scheduled_hour = scheduled_time.hour
+                        scheduled_minute = scheduled_time.minute
+                        if config.is_time_in_range(scheduled_hour, scheduled_minute):
+                            status = "SCHEDULED"  # Programmé dans les horaires autorisés
+                        else:
+                            status = "WAITING_HOURS"  # Programmé hors horaires autorisés
+                    else:
+                        # Pas de configuration horaire, toujours SCHEDULED
+                        status = "SCHEDULED"
                     
                     # Page : depuis la config DU FLUX
                     destination_id = social_pages.get(network, '')
@@ -174,12 +188,12 @@ class PostService:
                         media_urls=media_urls,
                         scheduled_at=scheduled_time,  # ✅ Délai depuis config GLOBALE
                         target_page_id=destination_id,  # ✅ Page depuis config DU FLUX (ou fallback)
-                        status="PENDING",
+                        status=status,
                         is_paused=False
                     )
                     self.db.add(queue_item)
                     
-                    print(f"📅 Validation: Programmé {network} pour {scheduled_time.strftime('%H:%M')} (délai global: {delay_minutes} min) sur page: {destination_id}")
+                    print(f"✅ AJOUTÉ À LA QUEUE: {network} - Statut: {status} - Programmé: {scheduled_time.strftime('%H:%M')} - Page: {destination_id}")
             
             self.db.commit()
             print(f"✅ Post ajouté à la file de publication pour {len(target_networks)} réseau(x)")

@@ -132,6 +132,58 @@ class ScheduleService:
             return next_day.replace(hour=start_hour, minute=start_min, second=0, microsecond=0).strftime("%H:%M")
 
         return "Maintenant"
+    
+    def bulk_update_schedules(self, network: str, configs_data: List[Dict]) -> List[ScheduleConfig]:
+        """Mettre à jour en masse les horaires d'un réseau et recalculer les posts"""
+        # Delete existing configs for the network
+        self.db.query(ScheduleConfig).filter(ScheduleConfig.network == network).delete()
+        self.db.commit()
+
+        # Create new configs
+        new_configs = []
+        for config_data in configs_data:
+            new_config = ScheduleConfig(**config_data)
+            self.db.add(new_config)
+            new_configs.append(new_config)
+        self.db.commit()
+        for config in new_configs:
+            self.db.refresh(config)
+        
+        # 🔄 REPROGRAMMER AUTOMATIQUEMENT les posts qui sont maintenant hors horaires
+        self._recalculate_posts_schedule(network)
+        
+        return new_configs
+    
+    def _recalculate_posts_schedule(self, network: str):
+        """Recalculer la programmation de tous les posts d'un réseau après changement d'horaires"""
+        from app.models.publication_queue import PublicationQueue
+        
+        print(f"🔄 Recalcul programmation pour {network} après changement d'horaires")
+        
+        # Récupérer tous les posts programmés pour ce réseau
+        posts_to_recalculate = self.db.query(PublicationQueue).filter(
+            PublicationQueue.network == network,
+            PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS'])
+        ).all()
+        
+        for post in posts_to_recalculate:
+            old_time = post.scheduled_at
+            new_time = self._adjust_time_to_schedule(network, old_time)
+            
+            if new_time != old_time:
+                post.scheduled_at = new_time
+                print(f"   📅 Post #{post.id}: {old_time.strftime('%H:%M')} → {new_time.strftime('%H:%M')}")
+                
+                # Mettre à jour le statut selon les nouveaux horaires
+                config = self.get_active_config_for_network_now(network)
+                if config and config.is_active:
+                    if config.is_time_in_range(new_time.hour, new_time.minute):
+                        post.status = "SCHEDULED"
+                    else:
+                        post.status = "WAITING_HOURS"
+        
+        self.db.commit()
+        print(f"✅ {len(posts_to_recalculate)} posts recalculés pour {network}")
 
     def _adjust_time_to_schedule(self, network: str, target_time: datetime) -> datetime:
         """Ajuster une heure cible pour qu'elle soit dans un créneau autorisé"""
@@ -151,22 +203,26 @@ class ScheduleService:
         
         # L'heure n'est pas autorisée, chercher le prochain créneau
         start_hour, start_min = map(int, config.start_time.split(':'))
-        
-        # Si on est avant l'heure de début aujourd'hui
-        today_start = target_time.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-        if target_time < today_start:
-            return today_start
-        
-        # Si on est après l'heure de fin aujourd'hui, programmer pour le lendemain
         end_hour, end_min = map(int, config.end_time.split(':'))
-        today_end = target_time.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-        if target_time > today_end:
-            tomorrow = target_time + timedelta(days=1)
+        
+        now = datetime.now()
+        
+        # Calculer les heures d'aujourd'hui
+        today_start = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+        today_end = now.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+        
+        # Si on est APRÈS l'heure de fermeture aujourd'hui, programmer pour demain
+        if now > today_end:
+            tomorrow = now + timedelta(days=1)
             return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
         
-        # Si on est dans la journée mais hors créneau, programmer au prochain créneau
-        # Pour l'instant, programmer au début du créneau du lendemain
-        tomorrow = target_time + timedelta(days=1)
+        # Si on est AVANT l'heure d'ouverture aujourd'hui, programmer pour aujourd'hui
+        if now < today_start:
+            return today_start
+        
+        # Si on est dans les horaires mais l'heure cible n'est pas bonne, programmer au prochain créneau
+        # Programmer pour demain à l'heure d'ouverture
+        tomorrow = now + timedelta(days=1)
         return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
 
     def get_publication_schedule_for_network(self, network: str, network_delay_minutes: int = 60) -> List[Dict]:
