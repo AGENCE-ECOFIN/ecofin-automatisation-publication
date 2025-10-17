@@ -30,10 +30,10 @@ else
     alembic stamp head 2>&1 || echo "⚠️  Impossible de marquer les migrations comme appliquées"
 fi
 
-# 2.5. S'assurer que la table schedule_configs existe
+# 2.5. Vérifier et appliquer toutes les migrations nécessaires
 echo ""
-echo "🔧 Vérification de la table schedule_configs..."
-python /app/create_schedule_configs_table.py || echo "⚠️  Erreur lors de la création de la table schedule_configs"
+echo "🔧 Vérification complète des migrations..."
+python /app/check_and_apply_migrations.py || echo "⚠️  Erreur lors de la vérification des migrations"
 
 echo "✅ Migrations terminées!"
 
