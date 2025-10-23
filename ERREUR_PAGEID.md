@@ -81,22 +81,28 @@ for feed in feeds:
             for network in feed.target_networks:
                 if network == 'facebook' and 'facebook' in blotato_accounts:
                     # Prendre la première page Facebook
-                    pages = blotato_accounts['facebook'].get('pages', [])
-                    if pages and len(pages) > 0:
-                        social_pages['facebook'] = pages[0]['id']
-                        print(f"   ✅ Facebook: {pages[0]['id']} ({pages[0]['name']})")
+                    facebook_accounts = blotato_accounts.get('facebook', [])
+                    if facebook_accounts and len(facebook_accounts) > 0:
+                        pages = facebook_accounts[0].get('pages', [])
+                        if pages and len(pages) > 0:
+                            social_pages['facebook'] = pages[0]['pageId']
+                            print(f"   ✅ Facebook: {pages[0]['pageId']} ({pages[0]['pageName']})")
                 
                 elif network == 'linkedin' and 'linkedin' in blotato_accounts:
-                    pages = blotato_accounts['linkedin'].get('pages', [])
-                    if pages and len(pages) > 0:
-                        social_pages['linkedin'] = pages[0]['id']
-                        print(f"   ✅ LinkedIn: {pages[0]['id']}")
+                    linkedin_accounts = blotato_accounts.get('linkedin', [])
+                    if linkedin_accounts and len(linkedin_accounts) > 0:
+                        pages = linkedin_accounts[0].get('pages', [])
+                        if pages and len(pages) > 0:
+                            social_pages['linkedin'] = pages[0]['pageId']
+                            print(f"   ✅ LinkedIn: {pages[0]['pageId']} ({pages[0]['pageName']})")
                 
                 elif network == 'x' and 'x' in blotato_accounts:
-                    pages = blotato_accounts['x'].get('pages', [])
-                    if pages and len(pages) > 0:
-                        social_pages['x'] = pages[0]['id']
-                        print(f"   ✅ X: {pages[0]['id']}")
+                    x_accounts = blotato_accounts.get('x', [])
+                    if x_accounts and len(x_accounts) > 0:
+                        pages = x_accounts[0].get('pages', [])
+                        if pages and len(pages) > 0:
+                            social_pages['x'] = pages[0]['pageId']
+                            print(f"   ✅ X: {pages[0]['pageId']} ({pages[0]['pageName']})")
         
         # Mettre à jour le feed
         feed.social_pages = social_pages

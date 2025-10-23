@@ -57,6 +57,16 @@ def get_rejected_posts(
     return post_service.get_posts(status="rejected")
 
 
+@router.get("/direct", response_model=List[dict])
+def get_direct_posts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Récupérer les posts directs"""
+    post_service = PostService(db)
+    return post_service.get_direct_posts()
+
+
 @router.get("/history", response_model=List[PostResponse])
 def get_posts_history(
     current_user: User = Depends(get_current_user),

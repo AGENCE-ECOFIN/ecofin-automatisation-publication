@@ -250,21 +250,37 @@ SECRET_KEY=votre_secret_key_tres_longue_et_aleatoire
 5. **Configurez `backend/blotato_accounts.json`** avec vos comptes et pages :
    ```json
    {
-     "facebook": {
-       "account_id": "11315",
-       "pages": [
-         {"id": "722025697671791", "name": "Page 1"},
-         {"id": "1982525425350969", "name": "Page 2"}
-       ]
-     },
-     "linkedin": {
-       "account_id": "7297",
-       "pages": [{"id": "7297", "name": "Profil LinkedIn"}]
-     },
-     "x": {
-       "account_id": "8067",
-       "pages": [{"id": "8067", "name": "Compte X"}]
-     }
+     "facebook": [
+       {
+         "accountId": "11315",
+         "accountName": "Thierry Hema",
+         "platform": "facebook",
+         "pages": [
+           {"pageId": "722025697671791", "pageName": "Testecofin"},
+           {"pageId": "1982525425350969", "pageName": "TogoFirst"}
+         ]
+       }
+     ],
+     "linkedin": [
+       {
+         "accountId": "7366",
+         "accountName": "Jérémie Flaux",
+         "platform": "linkedin",
+         "pages": [
+           {"pageId": "81702267", "pageName": "We Are Tech Africa"},
+           {"pageId": "74693773", "pageName": "Le Nouveau Gabon"}
+         ]
+       }
+     ],
+     "x": [
+       {
+         "accountId": "8067",
+         "accountName": "@agenceecofin",
+         "platform": "x",
+         "pages": []
+       }
+     ],
+     "last_updated": "2025-10-21T21:50:00Z"
    }
    ```
 

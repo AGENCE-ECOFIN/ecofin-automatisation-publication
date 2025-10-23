@@ -134,10 +134,12 @@ const FeedEditModal = ({ isOpen, onClose, feed, onSave, isLoading }) => {
     }
     
     if (networkType === 'linkedin' && blotatoAccounts.linkedin) {
-      return blotatoAccounts.linkedin.map(account => ({
-        id: account.accountId,
-        name: account.accountName
-      }));
+      return blotatoAccounts.linkedin.flatMap(account => 
+        account.pages.map(page => ({
+          id: page.pageId,
+          name: page.pageName
+        }))
+      );
     }
     
     if (networkType === 'x' && blotatoAccounts.x) {

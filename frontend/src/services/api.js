@@ -406,6 +406,25 @@ export const postsService = {
            }
            return api.post(`/posts/${id}/restore`);
          },
+         getDirect: async () => {
+           if (USE_MOCK_DATA) {
+             console.log('🔧 Using mock data for direct posts');
+             await delay(500);
+             if (shouldSimulateError()) {
+               throw new Error('Erreur de récupération des posts directs simulée');
+             }
+             return { data: [] };
+           }
+           console.log('🔧 Fetching real direct posts from API...');
+           try {
+             const response = await api.get('/posts/direct');
+             console.log('✅ Direct posts API response:', response.data?.length || 0, 'posts');
+             return response;
+           } catch (error) {
+             console.error('❌ Direct posts API error:', error);
+             throw error;
+           }
+         },
 };
 
 export const usersService = {

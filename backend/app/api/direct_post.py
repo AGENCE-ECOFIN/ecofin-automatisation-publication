@@ -19,6 +19,8 @@ class DirectPostRequest(BaseModel):
     target_page_id: str
     media_urls: Optional[List[str]] = []
     force_immediate: Optional[bool] = False  # Forcer publication immédiate même si pas optimal
+    scheduled_at: Optional[datetime] = None  # Date/heure de programmation personnalisée
+    schedule_type: Optional[str] = "auto"  # "auto", "immediate", "scheduled"
 
 async def _publish_immediately(post_data: DirectPostRequest, db: Session, user_id: int):
     """Publication immédiate d'un post direct"""
@@ -138,6 +140,51 @@ async def _add_to_queue_with_priority(post_data: DirectPostRequest, db: Session,
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Erreur ajout queue: {str(e)}")
 
+async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: Session, user_id: int):
+    """Ajouter un post direct à la queue avec programmation personnalisée"""
+    try:
+        # Vérifier que la date programmée est dans le futur
+        now = datetime.now(timezone.utc)
+        if post_data.scheduled_at <= now:
+            raise HTTPException(status_code=400, detail="La date de programmation doit être dans le futur")
+        
+        # Vérifier les horaires de publication pour la date programmée
+        schedule_service = ScheduleService(db)
+        # Note: Ici on pourrait ajouter une vérification plus sophistiquée des horaires
+        
+        # Créer l'entrée dans la queue avec programmation personnalisée
+        queue_item = PublicationQueue(
+            post_id=None,  # Post direct
+            feed_id=None,  # Post direct
+            network=post_data.network,
+            content=post_data.content,
+            media_urls=post_data.media_urls,
+            scheduled_at=post_data.scheduled_at,
+            target_page_id=post_data.target_page_id,
+            status="SCHEDULED",
+            is_paused=False,
+            extra_data={
+                "is_direct_post": True,
+                "created_by": user_id,
+                "schedule_type": "custom",
+                "scheduled_by_user": True
+            }
+        )
+        db.add(queue_item)
+        db.commit()
+        db.refresh(queue_item)
+        
+        return {
+            "message": f"Post programmé avec succès pour le {post_data.scheduled_at.strftime('%d/%m/%Y à %H:%M')}",
+            "queue_id": queue_item.id,
+            "scheduled_at": post_data.scheduled_at,
+            "status": "SCHEDULED"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur programmation personnalisée: {str(e)}")
+
 @router.post("/direct-post/")
 async def create_direct_post(
     post_data: DirectPostRequest,
@@ -194,15 +241,23 @@ async def create_direct_post(
                 remaining_delay = required_delay - time_since_last
                 reason_not_immediate.append(f"Délai insuffisant (il faut attendre {remaining_delay})")
         
-        # 5. Décision de publication
-        if can_publish_immediately or post_data.force_immediate:
+        # 5. Décision de publication selon le type de planification
+        if post_data.schedule_type == "immediate" or post_data.force_immediate:
             # Publication immédiate
             print(f"🚀 Publication IMMÉDIATE sur {post_data.network}")
             return await _publish_immediately(post_data, db, current_user.id)
+        elif post_data.schedule_type == "scheduled" and post_data.scheduled_at:
+            # Programmation personnalisée
+            print(f"📅 Programmation PERSONNALISÉE sur {post_data.network} pour {post_data.scheduled_at}")
+            return await _add_to_queue_with_custom_schedule(post_data, db, current_user.id)
         else:
-            # Ajouter à la queue avec priorité
-            print(f"⏳ Ajout à la queue avec PRIORITÉ sur {post_data.network}")
-            return await _add_to_queue_with_priority(post_data, db, current_user.id, reason_not_immediate)
+            # Par défaut, essayer de publier immédiatement si possible, sinon ajouter à la queue
+            if can_publish_immediately:
+                print(f"🚀 Publication IMMÉDIATE (défaut) sur {post_data.network}")
+                return await _publish_immediately(post_data, db, current_user.id)
+            else:
+                print(f"⏳ Ajout à la queue (défaut) sur {post_data.network}")
+                return await _add_to_queue_with_priority(post_data, db, current_user.id, reason_not_immediate)
             
     except HTTPException:
         raise

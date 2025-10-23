@@ -58,7 +58,7 @@ const UnifiedPublication = () => {
   const handleSaveNetwork = async (networkId) => {
     const data = networkFormData[networkId];
     if (!data) {
-      showToast('⚠️ Aucune modification');
+      showToast('Aucune modification');
       return;
     }
 
@@ -73,7 +73,7 @@ const UnifiedPublication = () => {
       console.log('🔧 Saving network:', networkId, networkData);
       await networksService.updateNetwork(networkId, networkData);
       queryClient.invalidateQueries('networks');
-      showToast('✅ Configuration mise à jour avec succès !', 'success');
+      showToast('Configuration mise à jour avec succès !', 'success');
       
       // Réinitialiser le formulaire
       setNetworkFormData(prev => {
@@ -83,7 +83,7 @@ const UnifiedPublication = () => {
       });
     } catch (error) {
       console.error('❌ Network update error:', error);
-      showToast(`❌ Erreur: ${error?.response?.data?.detail || error.message}`, 'error');
+      showToast(`Erreur: ${error?.response?.data?.detail || error.message}`, 'error');
     } finally {
       setIsSavingNetwork(false);
     }
@@ -105,24 +105,24 @@ const UnifiedPublication = () => {
   const { data: queueData } = useQuery('publication-queue', () => 
     publicationQueueService.getQueue()
   );
-  const queueItems = queueData?.data || [];
   
-  // Debug pour voir les données
-  console.log('🔍 Queue Items Debug:', queueItems);
+  // Récupération des posts directs (immédiats et programmés)
+  const { data: directPostsData } = useQuery('direct-posts', () => 
+    postsService.getDirect()
+  );
+  
+  const queueItems = queueData?.data || [];
+  const directPosts = directPostsData?.data || [];
+  
+  // Debug pour voir les données (réduit)
+  // console.log('🔍 Queue Items Debug:', queueItems);
 
   // Récupération des réseaux
   const { data: networksData, isLoading: networksLoading, error: networksError } = useQuery('networks', networksService.getNetworks);
   const networks = networksData?.data || [];
   
-  // Debug logs
-  console.log('🔍 Networks Debug:', { 
-    networksData, 
-    networks, 
-    count: networks.length,
-    isLoading: networksLoading,
-    error: networksError,
-    token: localStorage.getItem('token') ? 'Present' : 'Missing'
-  });
+  // Debug logs (réduit)
+  // console.log('🔍 Networks Debug:', { networks, count: networks.length });
 
   // Récupération des flux pour les filtres
   const { data: feedsData } = useQuery('feeds', feedsService.getFeeds);
@@ -153,13 +153,13 @@ const UnifiedPublication = () => {
 
 
   const handlePauseItem = (itemId) => {
-    if (window.confirm('⏸️ Voulez-vous mettre cette publication en pause ?')) {
+    if (window.confirm('Voulez-vous mettre cette publication en pause ?')) {
     pauseItemMutation.mutate(itemId);
     }
   };
 
   const handleResumeItem = (itemId) => {
-    if (window.confirm('▶️ Voulez-vous reprendre cette publication ?')) {
+    if (window.confirm('Voulez-vous reprendre cette publication ?')) {
     resumeItemMutation.mutate(itemId);
     }
   };
@@ -246,7 +246,7 @@ const UnifiedPublication = () => {
       return;
     }
     
-    if (window.confirm(`⏸️ Mettre en pause ${itemsToPause.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
+    if (window.confirm(`Mettre en pause ${itemsToPause.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
       itemsToPause.forEach(item => {
         pauseItemMutation.mutate(item.id);
       });
@@ -263,7 +263,7 @@ const UnifiedPublication = () => {
       return;
     }
     
-    if (window.confirm(`▶️ Reprendre ${itemsToResume.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
+    if (window.confirm(`Reprendre ${itemsToResume.length} publication(s) ${feedFilter || networkFilter || statusFilter ? 'filtrée(s)' : ''} ?`)) {
       itemsToResume.forEach(item => {
         resumeItemMutation.mutate(item.id);
       });
@@ -272,7 +272,10 @@ const UnifiedPublication = () => {
 
   // Fonction de filtrage des éléments de la file d'attente
   const getFilteredQueueItems = () => {
-    return queueItems.filter(item => {
+    // Combiner les posts de la queue et les posts directs
+    const allItems = [...queueItems, ...directPosts];
+    
+    return allItems.filter(item => {
       // Filtre par flux
       if (feedFilter) {
         if (feedFilter === 'direct') {
@@ -333,14 +336,14 @@ const UnifiedPublication = () => {
 
   const getStatusText = (status) => {
     switch (status) {
-      case 'SCHEDULED': return '📅 Programmés';
-      case 'WAITING_HOURS': return '🕐 En attente d\'horaires';
-      case 'PENDING': return '⏳ Prêts à publier';
-      case 'PUBLISHING': return '⚡ En cours';
-      case 'PUBLISHED': return '✅ Publiés';
-      case 'FAILED': return '❌ Échecs';
-      case 'CANCELLED': return '🚫 Annulés';
-      default: return '❓ Inconnu';
+      case 'SCHEDULED': return 'Programmés';
+      case 'WAITING_HOURS': return 'En attente d\'horaires';
+      case 'PENDING': return 'Prêts à publier';
+      case 'PUBLISHING': return 'En cours';
+      case 'PUBLISHED': return 'Publiés';
+      case 'FAILED': return 'Échecs';
+      case 'CANCELLED': return 'Annulés';
+      default: return 'Inconnu';
     }
   };
 
@@ -384,7 +387,7 @@ const UnifiedPublication = () => {
                 className="px-2 sm:px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs sm:text-sm"
                 title={`Configurer les horaires pour ${network.network}`}
               >
-                📅 {network.network.charAt(0).toUpperCase()}
+                {network.network.charAt(0).toUpperCase()}
               </button>
             ))}
           </div>
@@ -396,35 +399,35 @@ const UnifiedPublication = () => {
             <div className="text-3xl font-bold text-blue-700 mb-1">
               {queueItems.filter(item => item.status === 'SCHEDULED' && !item.is_paused).length}
             </div>
-            <div className="text-sm font-medium text-blue-600">📅 Programmés</div>
+            <div className="text-sm font-medium text-blue-600">Programmés</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-purple-700 mb-1">
               {queueItems.filter(item => item.status === 'WAITING_HOURS' && !item.is_paused).length}
             </div>
-            <div className="text-sm font-medium text-purple-600">🕐 En attente d'horaires</div>
+            <div className="text-sm font-medium text-purple-600">En attente d'horaires</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl border-2 border-yellow-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-yellow-700 mb-1">
               {queueItems.filter(item => item.status === 'PENDING' && !item.is_paused).length}
           </div>
-            <div className="text-sm font-medium text-yellow-600">⏳ Prêts à publier</div>
+            <div className="text-sm font-medium text-yellow-600">Prêts à publier</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-orange-700 mb-1">{queueItems.filter(item => item.is_paused).length}</div>
-            <div className="text-sm font-medium text-orange-600">⏸️ En pause</div>
+            <div className="text-sm font-medium text-orange-600">En pause</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl border-2 border-indigo-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-indigo-700 mb-1">{queueItems.filter(item => item.status === 'PUBLISHING').length}</div>
-            <div className="text-sm font-medium text-indigo-600">⚡ En cours</div>
+            <div className="text-sm font-medium text-indigo-600">En cours</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-green-700 mb-1">{queueItems.filter(item => item.status === 'PUBLISHED').length}</div>
-            <div className="text-sm font-medium text-green-600">✅ Publiés</div>
+            <div className="text-sm font-medium text-green-600">Publiés</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-red-700 mb-1">{queueItems.filter(item => item.status === 'FAILED').length}</div>
-            <div className="text-sm font-medium text-red-600">❌ Échecs</div>
+            <div className="text-sm font-medium text-red-600">Échecs</div>
           </div>
         </div>
 
@@ -434,7 +437,7 @@ const UnifiedPublication = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">
-                🗂️ Flux / Type
+                Flux / Type
               </label>
               <select
                 id="feedFilter"
@@ -442,13 +445,13 @@ const UnifiedPublication = () => {
                 onChange={(e) => setFeedFilter(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="">📋 Tous les types</option>
+                <option value="">Tous les types</option>
                 <optgroup label="Type de post">
-                  <option value="direct">📤 Posts directs</option>
+                  <option value="direct">Posts directs</option>
                 </optgroup>
                 <optgroup label="Flux RSS">
                 {feeds.map(feed => (
-                    <option key={feed.id} value={feed.id}>📰 {feed.name}</option>
+                    <option key={feed.id} value={feed.id}>{feed.name}</option>
                 ))}
                 </optgroup>
               </select>
@@ -478,13 +481,13 @@ const UnifiedPublication = () => {
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Tous les statuts</option>
-                <option value="SCHEDULED">📅 Programmés</option>
-                <option value="WAITING_HOURS">🕐 En attente d'horaires</option>
-                <option value="PENDING">⏳ Prêts à publier</option>
-                <option value="PAUSED">⏸️ En pause</option>
-                <option value="PUBLISHING">⚡ En cours</option>
-                <option value="PUBLISHED">✅ Publiés</option>
-                <option value="FAILED">❌ Échecs</option>
+                <option value="SCHEDULED">Programmés</option>
+                <option value="WAITING_HOURS">En attente d'horaires</option>
+                <option value="PENDING">Prêts à publier</option>
+                <option value="PAUSED">En pause</option>
+                <option value="PUBLISHING">En cours</option>
+                <option value="PUBLISHED">Publiés</option>
+                <option value="FAILED">Échecs</option>
               </select>
             </div>
 
@@ -552,7 +555,6 @@ const UnifiedPublication = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {getFilteredQueueItems().map((item) => {
-                console.log('🔍 Item Debug:', { id: item.id, status: item.status, is_paused: item.is_paused });
                 return (
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors duration-150">
                   <td className="px-3 sm:px-6 py-4">
@@ -562,7 +564,8 @@ const UnifiedPublication = () => {
                         <span className="sm:hidden">{item.content.substring(0, 50)}...</span>
                       </p>
                       <p className="text-xs text-gray-500">
-                        {item.feed_id ? `Flux #${item.feed_id}` : '📤 Post direct'}
+                        {item.feed_id ? `Flux #${item.feed_id}` : 
+                         item.is_immediate ? 'Post direct immédiat' : 'Post direct programmé'}
                       </p>
                     </div>
                   </td>
@@ -573,7 +576,7 @@ const UnifiedPublication = () => {
                         {item.network}
                       </span>
                       <div className="ml-2">
-                        {item.is_paused && <span className="text-orange-600 font-medium text-xs">⏸️ En pause</span>}
+                        {item.is_paused && <span className="text-orange-600 font-medium text-xs">En pause</span>}
                       </div>
                     </div>
                   </td>
@@ -590,7 +593,7 @@ const UnifiedPublication = () => {
                     {item.is_paused ? (
                       <div className="flex flex-col">
                         <span className="text-xs text-orange-600">
-                          ⏸️ Chrono arrêté
+                          Chrono arrêté
                         </span>
                       </div>
                     ) : (item.status === 'PENDING' || item.status === 'SCHEDULED' || item.status === 'WAITING_HOURS') ? (
@@ -601,7 +604,7 @@ const UnifiedPublication = () => {
                           <div className="flex flex-col">
                             {timeInfo && (
                               <span className={`text-xs ${timeInfo.class}`}>
-                                {timeInfo.isPast ? '⚡ Prêt à publier' : `⏱️ ${timeInfo.text}`}
+                                {timeInfo.isPast ? 'Prêt à publier' : timeInfo.text}
                               </span>
                             )}
                           </div>
@@ -751,7 +754,7 @@ const UnifiedPublication = () => {
                     <div className="space-y-4">
               <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
-                          ⏱️ Délai (min)
+                          Délai (min)
                 </label>
                 <input
                   type="number"
@@ -764,7 +767,7 @@ const UnifiedPublication = () => {
 
               <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
-                          📊 Max/jour
+                          Max/jour
                 </label>
                 <input
                           type="number"
@@ -813,7 +816,9 @@ const UnifiedPublication = () => {
     isGenerating: false,
     imageFile: null,
     imageUrl: '',
-    linkUrl: ''
+    linkUrl: '',
+    scheduleType: 'immediate', // 'immediate', 'scheduled'
+    scheduledAt: null
   });
 
   const [blotatoAccounts, setBlotatoAccounts] = useState(null);
@@ -835,7 +840,7 @@ const UnifiedPublication = () => {
 
   const handleGenerateContent = async () => {
     if (!directPostData.sourceContent) {
-      alert('⚠️ Veuillez saisir le contenu source');
+      alert('Veuillez saisir le contenu source');
       return;
     }
 
@@ -872,7 +877,7 @@ const UnifiedPublication = () => {
       }));
     } catch (error) {
       console.error('❌ Erreur génération:', error);
-      alert('❌ Erreur lors de la génération du contenu');
+      alert('Erreur lors de la génération du contenu');
       setDirectPostData(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -881,17 +886,17 @@ const UnifiedPublication = () => {
     let content = directPostData.generatedContent || directPostData.sourceContent;
     
     if (!content) {
-      alert('⚠️ Veuillez saisir ou générer du contenu');
+      alert('Veuillez saisir ou générer du contenu');
       return;
     }
 
     if (!directPostData.network) {
-      alert('⚠️ Veuillez sélectionner un réseau');
+      alert('Veuillez sélectionner un réseau');
       return;
     }
 
     if (!directPostData.targetPageId) {
-      alert('⚠️ Veuillez sélectionner une page de destination');
+      alert('Veuillez sélectionner une page de destination');
       return;
     }
 
@@ -900,7 +905,7 @@ const UnifiedPublication = () => {
       content += `\n\n🔗 ${directPostData.linkUrl}`;
     }
 
-    if (window.confirm('📤 Publier ce post IMMÉDIATEMENT (pas de file d\'attente) ?')) {
+    if (window.confirm('Publier ce post IMMÉDIATEMENT (pas de file d\'attente) ?')) {
       try {
         let mediaUrls = [];
         
@@ -923,23 +928,27 @@ const UnifiedPublication = () => {
           } catch (uploadError) {
             console.error('❌ Erreur upload image:', uploadError);
             // Continuer sans image si l'upload échoue
-            alert('⚠️ Impossible d\'uploader l\'image, publication sans image');
+            alert('Impossible d\'uploader l\'image, publication sans image');
           }
         }
         
         // Créer directement l'entrée dans PublicationQueue
-        const response = await api.post('/direct-post/', {
+        const postData = {
           network: directPostData.network,
           content: content,
           target_page_id: directPostData.targetPageId,
-          media_urls: mediaUrls
-        });
+          media_urls: mediaUrls,
+          schedule_type: directPostData.scheduleType,
+          scheduled_at: directPostData.scheduledAt
+        };
+
+        const response = await api.post('/direct-post/', postData);
 
         // Afficher l'URL de publication si disponible
         if (response.data?.publication_url) {
-          alert(`✅ Post publié avec succès !\n\n🔗 Voir le post:\n${response.data.publication_url}`);
+          alert(`Post publié avec succès !\n\nVoir le post:\n${response.data.publication_url}`);
         } else {
-          showToast('✅ Post publié avec succès !');
+          showToast('Post publié avec succès !');
         }
         
         // Nettoyer l'URL de l'image si créée
@@ -965,7 +974,7 @@ const UnifiedPublication = () => {
         queryClient.invalidateQueries('history');
       } catch (error) {
         console.error('❌ Erreur:', error);
-        alert(`❌ Erreur : ${error.response?.data?.detail || error.message}`);
+        alert(`Erreur : ${error.response?.data?.detail || error.message}`);
       }
     }
   };
@@ -983,10 +992,12 @@ const UnifiedPublication = () => {
     }
     
     if (networkType === 'linkedin' && blotatoAccounts.linkedin) {
-      return blotatoAccounts.linkedin.map(account => ({
-        id: account.accountId,
-        name: account.accountName
-      }));
+      return blotatoAccounts.linkedin.flatMap(account => 
+        account.pages.map(page => ({
+          id: page.pageId,
+          name: page.pageName
+        }))
+      );
     }
     
     if (networkType === 'x' && blotatoAccounts.x) {
@@ -1029,7 +1040,7 @@ const UnifiedPublication = () => {
               {/* Réseau */}
                   <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">
-                  🌐 Réseau social *
+                  Réseau social *
                     </label>
                 <div className="space-y-2">
                   {['facebook', 'linkedin', 'x'].map(network => {
@@ -1063,7 +1074,7 @@ const UnifiedPublication = () => {
               {/* Page de destination */}
                   <div>
                 <label className="block text-sm font-bold text-gray-700 mb-3">
-                  📄 Page de destination *
+                  Page de destination *
                     </label>
                 {!blotatoAccounts ? (
                   <div className="flex items-center justify-center py-10 bg-gray-50 rounded-lg">
@@ -1087,7 +1098,7 @@ const UnifiedPublication = () => {
                     {directPostData.targetPageId && (
                       <div className="mt-2 bg-green-50 border-l-4 border-green-500 p-3 rounded-r">
                         <p className="text-sm text-green-700 font-medium">
-                          ✅ {getNetworkPages(directPostData.network).find(p => p.id === directPostData.targetPageId)?.name}
+                          {getNetworkPages(directPostData.network).find(p => p.id === directPostData.targetPageId)?.name}
                         </p>
                       </div>
                     )}
@@ -1098,15 +1109,15 @@ const UnifiedPublication = () => {
 
             {/* Upload Image (optionnel) */}
             <div className="p-6 bg-white rounded-xl shadow-sm border-2 border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                🖼️ Image (optionnel)
+                <h3 className="text-lg font-bold text-gray-900 mb-4">
+                Image (optionnel)
               </h3>
 
               <div className="space-y-4">
                 {/* Upload d'image */}
                   <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
-                    📸 Ajouter une image
+                    Ajouter une image
                     </label>
                   
                   <div className="flex items-center justify-center w-full">
@@ -1127,7 +1138,7 @@ const UnifiedPublication = () => {
                           if (file) {
                             // Vérifier la taille (10MB max)
                             if (file.size > 10 * 1024 * 1024) {
-                              alert('❌ Fichier trop volumineux (max 10MB)');
+                              alert('Fichier trop volumineux (max 10MB)');
                               return;
                             }
                             
@@ -1189,7 +1200,7 @@ const UnifiedPublication = () => {
                   className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
                 />
                 <span className="ml-3 text-lg font-bold text-gray-900">
-                  🤖 Utiliser l'IA pour générer le contenu
+                  Utiliser l'IA pour générer le contenu
                 </span>
               </label>
 
@@ -1198,7 +1209,7 @@ const UnifiedPublication = () => {
                   {/* Prompt */}
                   <div>
                     <label className="block text-sm font-bold text-purple-900 mb-2">
-                      💬 Prompt personnalisé (optionnel)
+                      Prompt personnalisé (optionnel)
                     </label>
                     <textarea
                       value={directPostData.customPrompt}
@@ -1215,7 +1226,7 @@ const UnifiedPublication = () => {
                   {/* Contenu source */}
                   <div>
                     <label className="block text-sm font-bold text-purple-900 mb-2">
-                      📝 Contenu source *
+                      Contenu source *
                     </label>
                     <textarea
                       value={directPostData.sourceContent}
@@ -1240,7 +1251,7 @@ const UnifiedPublication = () => {
                       </>
                     ) : (
                       <>
-                        ✨ Générer le contenu avec l'IA
+                        Générer le contenu avec l'IA
                       </>
                     )}
             </button>
@@ -1249,7 +1260,7 @@ const UnifiedPublication = () => {
                   {directPostData.generatedContent && (
                     <div className="mt-4 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
                       <label className="block text-sm font-bold text-green-900 mb-2">
-                        ✅ Contenu généré (éditable)
+                        Contenu généré (éditable)
                     </label>
                       <textarea
                         value={directPostData.generatedContent}
@@ -1263,7 +1274,7 @@ const UnifiedPublication = () => {
               ) : (
                   <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
-                    📝 Contenu du post *
+                    Contenu du post *
                     </label>
                   <textarea
                     value={directPostData.sourceContent}
@@ -1280,6 +1291,105 @@ const UnifiedPublication = () => {
                   </div>
                 </div>
 
+            {/* Options de planification simplifiées */}
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
+                Planification de publication
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Publication immédiate */}
+                <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  directPostData.scheduleType === 'immediate' 
+                    ? 'border-green-500 bg-green-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    value="immediate"
+                    checked={directPostData.scheduleType === 'immediate'}
+                    onChange={(e) => setDirectPostData(prev => ({ 
+                      ...prev, 
+                      scheduleType: e.target.value,
+                      scheduledAt: null
+                    }))}
+                    className="sr-only"
+                  />
+                  <div className="flex-1">
+                    <div className="font-bold text-lg text-gray-900">Maintenant</div>
+                    <div className="text-sm text-gray-600">Publier immédiatement</div>
+                  </div>
+                  {directPostData.scheduleType === 'immediate' && (
+                    <FaCheck className="ml-3 text-green-600 text-xl" />
+                  )}
+                </label>
+
+                {/* Programmation */}
+                <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  directPostData.scheduleType === 'scheduled' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    value="scheduled"
+                    checked={directPostData.scheduleType === 'scheduled'}
+                    onChange={(e) => setDirectPostData(prev => ({ 
+                      ...prev, 
+                      scheduleType: e.target.value,
+                      scheduledAt: e.target.value === 'scheduled' ? prev.scheduledAt : null
+                    }))}
+                    className="sr-only"
+                  />
+                  <div className="flex-1">
+                    <div className="font-bold text-lg text-gray-900">Plus tard</div>
+                    <div className="text-sm text-gray-600">Choisir la date/heure</div>
+                  </div>
+                  {directPostData.scheduleType === 'scheduled' && (
+                    <FaCheck className="ml-3 text-blue-600 text-xl" />
+                  )}
+                </label>
+              </div>
+
+              {/* Sélecteur de date/heure (seulement si "Plus tard" est sélectionné) */}
+              {directPostData.scheduleType === 'scheduled' && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Date et heure de publication
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={directPostData.scheduledAt ? new Date(directPostData.scheduledAt).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => {
+                      const dateTime = e.target.value;
+                      if (dateTime) {
+                        setDirectPostData(prev => ({ 
+                          ...prev, 
+                          scheduledAt: new Date(dateTime).toISOString()
+                        }));
+                      }
+                    }}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full p-3 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {directPostData.scheduledAt && (
+                    <div className="mt-3 bg-white border-l-4 border-blue-500 p-3 rounded-r">
+                      <p className="text-sm text-blue-700 font-medium">
+                        Programmé pour le {new Date(directPostData.scheduledAt).toLocaleString('fr-FR', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
           {/* Footer */}
           <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
             <button
@@ -1294,15 +1404,15 @@ const UnifiedPublication = () => {
               onClick={handlePublishDirectPost}
               disabled={
                 !directPostData.targetPageId || 
-                (!directPostData.sourceContent && !directPostData.generatedContent)
+                (!directPostData.sourceContent && !directPostData.generatedContent) ||
+                (directPostData.scheduleType === 'scheduled' && !directPostData.scheduledAt)
               }
               className="px-6 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold"
             >
               <FaCheck className="inline mr-2" />
-              {directPostData.useAI && directPostData.generatedContent 
-                ? 'Publier le contenu généré' 
-                : 'Publier maintenant'
-              }
+              {directPostData.scheduleType === 'immediate' ? 'Publier maintenant' :
+               directPostData.scheduleType === 'scheduled' ? 'Programmer le post' :
+               'Publier maintenant'}
                   </button>
         </div>
       </div>

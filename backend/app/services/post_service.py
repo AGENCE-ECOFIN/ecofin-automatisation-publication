@@ -34,6 +34,81 @@ class PostService:
             query = query.filter(Post.feed_id == feed_id)
         return query.order_by(Post.created_at.desc()).all()
 
+    def get_direct_posts(self) -> List[dict]:
+        """Récupérer les posts directs depuis la publication_queue ET l'historique"""
+        from app.models.publication_queue import PublicationQueue
+        from app.models.publication import Publication
+        
+        result = []
+        
+        # 1. Récupérer les posts directs dans la queue (programmés/en attente)
+        queue_direct_posts = self.db.query(PublicationQueue).filter(
+            PublicationQueue.post_id.is_(None)
+        ).order_by(PublicationQueue.created_at.desc()).all()
+        
+        for queue_item in queue_direct_posts:
+            # Extraire les informations du post direct
+            extra_data = queue_item.extra_data or {}
+            is_direct = extra_data.get('is_direct_post', False)
+            
+            result.append({
+                'id': f"direct_{queue_item.id}",
+                'title': f"Post direct - {queue_item.network}",
+                'content': queue_item.content,
+                'source_url': None,
+                'source_image': queue_item.media_urls[0] if queue_item.media_urls else None,
+                'generated_content': {queue_item.network: queue_item.content},
+                'status': 'direct',
+                'feed_id': None,
+                'feed': None,
+                'validated_by': None,
+                'validated_at': None,
+                'created_at': queue_item.created_at,
+                'updated_at': queue_item.updated_at,
+                'network': queue_item.network,
+                'scheduled_at': queue_item.scheduled_at,
+                'published_at': queue_item.published_at,
+                'queue_status': queue_item.status,
+                'is_direct': True,
+                'publication_url': queue_item.publication_url
+            })
+        
+        # 2. Récupérer les posts directs publiés immédiatement depuis l'historique
+        # (post_id = NULL ET feed_id = NULL dans Publication)
+        immediate_direct_posts = self.db.query(Publication).filter(
+            Publication.post_id.is_(None),
+            Publication.feed_id.is_(None)
+        ).order_by(Publication.published_at.desc()).all()
+        
+        for pub_item in immediate_direct_posts:
+            result.append({
+                'id': f"immediate_{pub_item.id}",
+                'title': f"Post direct - {pub_item.network}",
+                'content': pub_item.content,
+                'source_url': None,
+                'source_image': None,
+                'generated_content': {pub_item.network: pub_item.content},
+                'status': 'direct',
+                'feed_id': None,
+                'feed': None,
+                'validated_by': None,
+                'validated_at': None,
+                'created_at': pub_item.published_at,  # Utiliser published_at comme created_at
+                'updated_at': pub_item.published_at,
+                'network': pub_item.network,
+                'scheduled_at': None,  # Pas de programmation pour les posts immédiats
+                'published_at': pub_item.published_at,
+                'queue_status': 'PUBLISHED' if pub_item.is_success else 'FAILED',
+                'is_direct': True,
+                'publication_url': pub_item.published_url,
+                'is_immediate': True  # Marquer comme post immédiat
+            })
+        
+        # Trier par date de création (plus récent en premier)
+        result.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return result
+
     def get_post_by_id(self, post_id: int) -> Optional[Post]:
         return self.db.query(Post).options(joinedload(Post.feed)).filter(Post.id == post_id).first()
 
@@ -169,10 +244,12 @@ class PostService:
                             blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
                             with open(blotato_file, 'r') as f:
                                 blotato_accounts = json.load(f)
-                                facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
-                                if facebook_pages and len(facebook_pages) > 0:
-                                    destination_id = facebook_pages[0]['id']
-                                    print(f"   ⚠️  Page Facebook manquante pour ce flux, utilisation du fallback: {facebook_pages[0]['name']}")
+                                facebook_accounts = blotato_accounts.get('facebook', [])
+                                if facebook_accounts and len(facebook_accounts) > 0:
+                                    facebook_pages = facebook_accounts[0].get('pages', [])
+                                    if facebook_pages and len(facebook_pages) > 0:
+                                        destination_id = facebook_pages[0]['pageId']
+                                        print(f"   ⚠️  Page Facebook manquante pour ce flux, utilisation du fallback: {facebook_pages[0]['pageName']}")
                         except Exception as e:
                             print(f"   ❌ Impossible de charger blotato_accounts.json: {e}")
                     
@@ -290,10 +367,12 @@ class PostService:
                         blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
                         with open(blotato_file, 'r') as f:
                             blotato_accounts = json.load(f)
-                            facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
-                            if facebook_pages:
-                                destination_id = facebook_pages[0]['id']
-                                print(f"   ⚠️ Fallback Facebook: {facebook_pages[0]['name']}")
+                            facebook_accounts = blotato_accounts.get('facebook', [])
+                            if facebook_accounts and len(facebook_accounts) > 0:
+                                facebook_pages = facebook_accounts[0].get('pages', [])
+                                if facebook_pages:
+                                    destination_id = facebook_pages[0]['pageId']
+                                print(f"   ⚠️ Fallback Facebook: {facebook_pages[0]['pageName']}")
                     except Exception as e:
                         print(f"   ❌ Erreur fallback Facebook: {e}")
                 
@@ -380,7 +459,10 @@ class PostService:
                         blotato_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'blotato_accounts.json')
                         with open(blotato_file, 'r') as f:
                             blotato_accounts = json.load(f)
-                            facebook_pages = blotato_accounts.get('facebook', {}).get('pages', [])
+                            facebook_accounts = blotato_accounts.get('facebook', [])
+                            if not facebook_accounts or len(facebook_accounts) == 0:
+                                return {"ready": False, "reason": "Pas de compte Facebook configuré"}
+                            facebook_pages = facebook_accounts[0].get('pages', [])
                             if not facebook_pages:
                                 return {"ready": False, "reason": "Pas de page Facebook configurée"}
                     except:
