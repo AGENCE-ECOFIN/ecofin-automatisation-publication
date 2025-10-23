@@ -181,29 +181,29 @@ const Dashboard = () => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="text-center p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
                 <div className="text-3xl font-bold text-blue-700">{queueStats.scheduled}</div>
-                <div className="text-sm font-medium text-blue-600">📅 Programmés</div>
+                <div className="text-sm font-medium text-blue-600">Programmés</div>
                 <p className="text-xs text-blue-500 mt-1">≤ 10 min</p>
               </div>
               <div className="text-center p-4 bg-yellow-50 rounded-lg border-2 border-yellow-200">
                 <div className="text-3xl font-bold text-yellow-700">{queueStats.pending}</div>
-                <div className="text-sm font-medium text-yellow-600">⏳ En attente</div>
+                <div className="text-sm font-medium text-yellow-600">En attente</div>
                 <p className="text-xs text-yellow-500 mt-1">+ de 10 min</p>
               </div>
               <div className="text-center p-4 bg-orange-50 rounded-lg border-2 border-orange-200">
                 <div className="text-3xl font-bold text-orange-700">{queueStats.paused}</div>
-                <div className="text-sm font-medium text-orange-600">⏸️ En pause</div>
+                <div className="text-sm font-medium text-orange-600">En pause</div>
               </div>
               <div className="text-center p-4 bg-indigo-50 rounded-lg border-2 border-indigo-200">
                 <div className="text-3xl font-bold text-indigo-700">{queueStats.publishing}</div>
-                <div className="text-sm font-medium text-indigo-600">⚡ En cours</div>
+                <div className="text-sm font-medium text-indigo-600">En cours</div>
               </div>
               <div className="text-center p-4 bg-green-50 rounded-lg border-2 border-green-200">
                 <div className="text-3xl font-bold text-green-700">{queueStats.published}</div>
-                <div className="text-sm font-medium text-green-600">✅ Publiés</div>
+                <div className="text-sm font-medium text-green-600">Publiés</div>
               </div>
               <div className="text-center p-4 bg-red-50 rounded-lg border-2 border-red-200">
                 <div className="text-3xl font-bold text-red-700">{queueStats.failed}</div>
-                <div className="text-sm font-medium text-red-600">❌ Échecs</div>
+                <div className="text-sm font-medium text-red-600">Échecs</div>
               </div>
             </div>
           </div>

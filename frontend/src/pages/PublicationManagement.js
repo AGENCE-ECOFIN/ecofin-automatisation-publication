@@ -427,7 +427,7 @@ const PublicationManagement = () => {
                 <span className={`text-sm font-bold ${
                   network.api_credentials ? 'text-green-600' : 'text-orange-600'
                 }`}>
-                  {network.api_credentials ? '✓ Configurée' : '⚠ À configurer'}
+                  {network.api_credentials ? 'Configurée' : 'À configurer'}
                 </span>
               </div>
             </div>

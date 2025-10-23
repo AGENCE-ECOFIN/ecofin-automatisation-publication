@@ -28,3 +28,4 @@ const LoadingSpinner = ({ size = 'medium', color = 'indigo', text = 'Chargement.
 export default LoadingSpinner;
 
 
+

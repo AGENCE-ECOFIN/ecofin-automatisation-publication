@@ -20,20 +20,24 @@ const Posts = () => {
   const { data: draftsData = [], isLoading: draftsLoading, error: draftsError } = useQuery('drafts', postsService.getDrafts);
   const { data: validatedData = [], isLoading: validatedLoading, error: validatedError } = useQuery('validated', postsService.getValidated);
   const { data: rejectedData = [], isLoading: rejectedLoading, error: rejectedError } = useQuery('rejected', postsService.getRejected);
+  const { data: directData = [], isLoading: directLoading, error: directError } = useQuery('direct', postsService.getDirect);
 
   // S'assurer que les données sont toujours des tableaux
   const safeDrafts = Array.isArray(draftsData?.data) ? draftsData.data : Array.isArray(draftsData) ? draftsData : [];
   const safeValidated = Array.isArray(validatedData?.data) ? validatedData.data : Array.isArray(validatedData) ? validatedData : [];
   const safeRejected = Array.isArray(rejectedData?.data) ? rejectedData.data : Array.isArray(rejectedData) ? rejectedData : [];
+  const safeDirect = Array.isArray(directData?.data) ? directData.data : Array.isArray(directData) ? directData : [];
   
   // Debug logs (réduits)
   console.log('🔍 Posts Debug:', {
     draftsCount: safeDrafts.length,
     validatedCount: safeValidated.length,
     rejectedCount: safeRejected.length,
+    directCount: safeDirect.length,
     draftsLoading,
     validatedLoading,
-    rejectedLoading
+    rejectedLoading,
+    directLoading
   });
 
   const validateMutation = useMutation(
@@ -157,13 +161,14 @@ const Posts = () => {
   const getCurrentPosts = () => {
     const posts = activeTab === 'drafts' ? safeDrafts : 
                   activeTab === 'validated' ? safeValidated : 
-                  activeTab === 'rejected' ? safeRejected : [];
+                  activeTab === 'rejected' ? safeRejected :
+                  activeTab === 'direct' ? safeDirect : [];
     return filterPosts(posts);
   };
 
   // Obtenir les sources uniques pour le filtre
   const getUniqueSources = () => {
-    const allPosts = [...safeDrafts, ...safeValidated, ...safeRejected];
+    const allPosts = [...safeDrafts, ...safeValidated, ...safeRejected, ...safeDirect];
     const sources = [...new Set(allPosts.map(post => {
       if (post.source_url) {
         try {
@@ -280,20 +285,30 @@ const Posts = () => {
             >
               Rejetés ({filterPosts(safeRejected).length}/{safeRejected.length})
             </button>
+            <button
+              onClick={() => setActiveTab('direct')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'direct'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Directs ({filterPosts(safeDirect).length}/{safeDirect.length})
+            </button>
           </nav>
         </div>
 
         {/* Content */}
-        {draftsLoading || validatedLoading || rejectedLoading ? (
+        {draftsLoading || validatedLoading || rejectedLoading || directLoading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <p className="mt-4 text-gray-600">Chargement des posts...</p>
           </div>
-        ) : draftsError || validatedError || rejectedError ? (
+        ) : draftsError || validatedError || rejectedError || directError ? (
           <div className="text-center py-12">
             <div className="bg-red-50 border border-red-200 rounded-md p-4">
               <p className="text-red-800">
-                Erreur lors du chargement des posts: {draftsError?.message || validatedError?.message || rejectedError?.message}
+                Erreur lors du chargement des posts: {draftsError?.message || validatedError?.message || rejectedError?.message || directError?.message}
               </p>
             </div>
           </div>
@@ -353,17 +368,23 @@ const Posts = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-gray-900 line-clamp-2">
-                      {post.title}
+                      {post.is_direct ? 
+                        `${post.is_immediate ? 'Post direct immédiat' : 'Post direct programmé'} - ${post.network.toUpperCase()}` : 
+                        post.title
+                      }
                     </h3>
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                       post.status === 'draft' 
                         ? 'bg-yellow-100 text-yellow-800' 
                         : post.status === 'validated'
                         ? 'bg-green-100 text-green-800'
+                        : post.status === 'direct'
+                        ? 'bg-blue-100 text-blue-800'
                         : 'bg-red-100 text-red-800'
                     }`}>
                       {post.status === 'draft' ? 'Brouillon' : 
-                       post.status === 'validated' ? 'Validé' : 'Rejeté'}
+                       post.status === 'validated' ? 'Validé' : 
+                       post.status === 'direct' ? 'Direct' : 'Rejeté'}
                     </span>
                   </div>
 
@@ -382,13 +403,44 @@ const Posts = () => {
                   )}
 
                   <p className="text-gray-600 text-sm line-clamp-3">
-                    {cleanHtmlContent(post.content, 200)}
+                    {post.is_direct ? 
+                      post.content.substring(0, 200) + (post.content.length > 200 ? '...' : '') :
+                      cleanHtmlContent(post.content, 200)
+                    }
                   </p>
 
                   <div className="text-xs text-gray-500 space-y-1">
                     <p>Créé le: {format(new Date(post.created_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</p>
                     {post.validated_at && (
                       <p>Validé le: {format(new Date(post.validated_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</p>
+                    )}
+                    {post.is_direct && (
+                      <>
+                        <p>Réseau: <span className="font-medium capitalize">{post.network}</span></p>
+                        <p>Type: <span className={`font-medium ${
+                          post.is_immediate ? 'text-green-600' : 'text-blue-600'
+                        }`}>{post.is_immediate ? 'Immédiat' : 'Programmé'}</span></p>
+                        <p>Statut: <span className={`font-medium ${
+                          post.queue_status === 'PUBLISHED' ? 'text-green-600' :
+                          post.queue_status === 'FAILED' ? 'text-red-600' :
+                          post.queue_status === 'PENDING' ? 'text-yellow-600' :
+                          post.queue_status === 'SCHEDULED' ? 'text-blue-600' :
+                          'text-gray-600'
+                        }`}>{post.queue_status}</span></p>
+                        {post.scheduled_at && (
+                          <p>Programmé pour: {format(new Date(post.scheduled_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</p>
+                        )}
+                        {post.published_at && (
+                          <p>Publié le: {format(new Date(post.published_at), 'dd/MM/yyyy à HH:mm', { locale: fr })}</p>
+                        )}
+                        {post.publication_url && (
+                          <p>
+                            <a href={post.publication_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                              Voir le post publié
+                            </a>
+                          </p>
+                        )}
+                      </>
                     )}
                     {post.source_url && (
                       <p>

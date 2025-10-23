@@ -75,7 +75,7 @@ const History = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label htmlFor="feedFilter" className="block text-sm font-medium text-gray-700 mb-1">
-                🗂️ Flux / Type
+                Flux / Type
               </label>
               <select
                 id="feedFilter"
@@ -83,13 +83,13 @@ const History = () => {
                 onChange={(e) => setFeedFilter(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
-                <option value="">📋 Tous les types</option>
+                <option value="">Tous les types</option>
                 <optgroup label="Type de post">
-                  <option value="direct">📤 Posts directs</option>
+                  <option value="direct">Posts directs</option>
                 </optgroup>
                 <optgroup label="Flux RSS">
                   {feeds.map(feed => (
-                    <option key={feed.id} value={feed.id}>📰 {feed.name}</option>
+                    <option key={feed.id} value={feed.id}>{feed.name}</option>
                   ))}
                 </optgroup>
               </select>
@@ -119,8 +119,8 @@ const History = () => {
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Tous les statuts</option>
-                <option value="PUBLISHED">✅ Publiés</option>
-                <option value="FAILED">❌ Échecs</option>
+                <option value="PUBLISHED">Publiés</option>
+                <option value="FAILED">Échecs</option>
               </select>
             </div>
 
@@ -141,13 +141,13 @@ const History = () => {
           {/* Statistiques */}
           <div className="mt-4 flex items-center space-x-6 text-sm text-gray-600">
             <span className="font-medium">
-              📊 Total : <strong className="text-gray-900">{history.length}</strong>
+              Total : <strong className="text-gray-900">{history.length}</strong>
             </span>
             <span>
-              ✅ Publiés : <strong className="text-green-600">{allHistory.filter(i => i.is_success).length}</strong>
+              Publiés : <strong className="text-green-600">{allHistory.filter(i => i.is_success).length}</strong>
             </span>
             <span>
-              ❌ Échecs : <strong className="text-red-600">{allHistory.filter(i => !i.is_success).length}</strong>
+              Échecs : <strong className="text-red-600">{allHistory.filter(i => !i.is_success).length}</strong>
             </span>
           </div>
         </div>
@@ -248,11 +248,11 @@ const History = () => {
                       
                       {item.post_id ? (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                          📰 Post RSS #{item.post_id}
+                          Post RSS #{item.post_id}
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
-                          📤 Post Direct
+                          Post Direct
                         </span>
                       )}
                     </div>

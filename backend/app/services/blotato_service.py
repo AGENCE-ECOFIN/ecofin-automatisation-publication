@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from app.core.config import settings
+from app.services.image_service import ImageService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class BlotatoService:
     
     def _get_account_id(self, network: str) -> Optional[str]:
         """
-        Récupère l'ID du compte Blotato pour un réseau donné
+        Récupère l'ID du compte Blotato pour un réseau donné depuis blotato_accounts.json
         
         Args:
             network: Nom du réseau ('linkedin', 'x', 'facebook', etc.)
@@ -46,13 +47,34 @@ class BlotatoService:
         Returns:
             L'ID du compte ou None si non trouvé
         """
-        account_ids = {
-            'linkedin': settings.BLOTATO_LINKEDIN_ACCOUNT_ID,
-            'x': settings.BLOTATO_X_ACCOUNT_ID,
-            'twitter': settings.BLOTATO_X_ACCOUNT_ID,
-            'facebook': settings.BLOTATO_FACEBOOK_ACCOUNT_ID
-        }
-        return account_ids.get(network.lower())
+        try:
+            import json
+            import os
+            from pathlib import Path
+            
+            # Chemin vers le fichier blotato_accounts.json
+            blotato_file = Path(__file__).parent.parent.parent / "blotato_accounts.json"
+            
+            if not blotato_file.exists():
+                logger.warning(f"Fichier blotato_accounts.json non trouvé: {blotato_file}")
+                return None
+                
+            with open(blotato_file, 'r', encoding='utf-8') as f:
+                blotato_accounts = json.load(f)
+            
+            # Récupérer le premier compte pour le réseau demandé
+            network_accounts = blotato_accounts.get(network.lower(), [])
+            if network_accounts and len(network_accounts) > 0:
+                account_id = network_accounts[0].get('accountId')
+                logger.info(f"Account ID récupéré pour {network}: {account_id}")
+                return account_id
+            else:
+                logger.warning(f"Aucun compte trouvé pour {network}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération de l'account ID pour {network}: {e}")
+            return None
     
     def publish_to_network(
         self, 
@@ -88,15 +110,23 @@ class BlotatoService:
             # Récupérer le nom de la platform Blotato (lowercase pour l'API)
             platform = self.network_mapping[network.lower()].lower()
             
+            # Pour tous les réseaux, optimiser les images si nécessaire
+            processed_media_urls = media_urls if media_urls else []
+            if processed_media_urls:
+                logger.info(f"Optimisation des images pour {network}: {processed_media_urls}")
+                image_service = ImageService()
+                processed_media_urls = image_service.upload_images_to_cdn(processed_media_urls)
+                logger.info(f"URLs optimisées après traitement: {processed_media_urls}")
+            
             # Construire l'objet target selon le réseau
             target = {"targetType": platform}
             
             # Utiliser le target_page_id fourni ou celui de la config
             page_id = target_page_id
             
-            # Facebook nécessite un pageId
-            if platform == "facebook":
-                if not page_id and hasattr(settings, 'BLOTATO_FACEBOOK_PAGE_ID'):
+            # Facebook et LinkedIn nécessitent un pageId
+            if platform in ["facebook", "linkedin"]:
+                if not page_id and hasattr(settings, 'BLOTATO_FACEBOOK_PAGE_ID') and platform == "facebook":
                     page_id = settings.BLOTATO_FACEBOOK_PAGE_ID
                 if page_id:
                     target["pageId"] = page_id
@@ -107,7 +137,7 @@ class BlotatoService:
                     "accountId": account_id,
                     "content": {
                         "text": content,
-                        "mediaUrls": media_urls if media_urls else [],
+                        "mediaUrls": processed_media_urls,
                         "platform": platform
                     },
                     "target": target
@@ -121,7 +151,7 @@ class BlotatoService:
             
             # Log pour debug
             logger.info(f"📤 Publication sur {network} via Blotato - Account ID: {account_id}")
-            logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+            logger.info(f"Payload: {json.dumps(payload, indent=2)}")
             
             # Effectuer la publication via l'API Blotato
             response = requests.post(

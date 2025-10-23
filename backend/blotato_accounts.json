@@ -1,10 +1,40 @@
 {
   "linkedin": [
     {
-      "accountId": "7297",
-      "accountName": "Tiemoko Souahamai Thierry HEMA",
+      "accountId": "7366",
+      "accountName": "Jérémie Flaux",
       "platform": "linkedin",
-      "pages": []
+      "pages": [
+        {
+          "pageId": "81702267",
+          "pageName": "We Are Tech Africa"
+        },
+        {
+          "pageId": "74693773",
+          "pageName": "Le Nouveau Gabon"
+        },
+        {
+          "pageId": "2170968",
+          "pageName": "Agence Ecofin"
+        },
+        {
+          "pageId": "104271604",
+          "pageName": "Bankable_RDC"
+        },
+        {
+          "pageId": "106532093",
+          "pageName": "Ecofin Agency"
+        },
+        {
+          "pageId": "108062155",
+          "pageName": "TestAE"
+        },
+        {
+          "pageId": "69953640",
+          "pageName": "Investir au Cameroun"
+        }
+        
+      ]
     }
   ],
   "facebook": [
@@ -60,5 +90,5 @@
       "pages": []
     }
   ],
-  "last_updated": "2025-10-11T21:50:00Z"
+  "last_updated": "2025-10-21T21:50:00Z"
 }
