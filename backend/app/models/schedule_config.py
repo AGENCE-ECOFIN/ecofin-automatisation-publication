@@ -49,8 +49,10 @@ class ScheduleConfig(Base):
 
     def is_time_in_range(self, hour: int, minute: int = 0) -> bool:
         """Vérifie si une heure donnée est dans le créneau horaire"""
-        start_hour, start_min = map(int, self.start_time.split(':'))
-        end_hour, end_min = map(int, self.end_time.split(':'))
+        start_hour = self.start_time.hour
+        start_min = self.start_time.minute
+        end_hour = self.end_time.hour
+        end_min = self.end_time.minute
         
         current_minutes = hour * 60 + minute
         start_minutes = start_hour * 60 + start_min
@@ -60,8 +62,10 @@ class ScheduleConfig(Base):
 
     def get_available_minutes_in_range(self, interval_minutes: int = 30) -> list:
         """Retourne toutes les minutes disponibles dans le créneau"""
-        start_hour, start_min = map(int, self.start_time.split(':'))
-        end_hour, end_min = map(int, self.end_time.split(':'))
+        start_hour = self.start_time.hour
+        start_min = self.start_time.minute
+        end_hour = self.end_time.hour
+        end_min = self.end_time.minute
         
         start_minutes = start_hour * 60 + start_min
         end_minutes = end_hour * 60 + end_min

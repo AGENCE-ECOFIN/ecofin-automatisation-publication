@@ -19,8 +19,13 @@ class ScheduleConfigBase(BaseModel):
 
     @validator('start_time', 'end_time')
     def validate_time_format(cls, v):
-        """Valide le format HH:MM"""
+        """Valide le format HH:MM ou convertit un objet time"""
         try:
+            # Si c'est déjà un objet time, le convertir en string
+            if hasattr(v, 'hour') and hasattr(v, 'minute'):
+                return v.strftime('%H:%M')
+            
+            # Si c'est une chaîne, la valider
             hour, minute = map(int, v.split(':'))
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 raise ValueError("Heure invalide")
