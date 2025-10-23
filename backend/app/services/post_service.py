@@ -58,7 +58,7 @@ class PostService:
                 'source_url': None,
                 'source_image': queue_item.media_urls[0] if queue_item.media_urls else None,
                 'generated_content': {queue_item.network: queue_item.content},
-                'status': 'direct',
+                'status': queue_item.status,  # Utiliser le statut de la queue
                 'feed_id': None,
                 'feed': None,
                 'validated_by': None,
@@ -70,7 +70,8 @@ class PostService:
                 'published_at': queue_item.published_at,
                 'queue_status': queue_item.status,
                 'is_direct': True,
-                'publication_url': queue_item.publication_url
+                'publication_url': queue_item.publication_url,
+                'is_immediate': False  # Post programmé, pas immédiat
             })
         
         # 2. Récupérer les posts directs publiés immédiatement depuis l'historique
@@ -88,7 +89,7 @@ class PostService:
                 'source_url': None,
                 'source_image': None,
                 'generated_content': {pub_item.network: pub_item.content},
-                'status': 'direct',
+                'status': 'PUBLISHED' if pub_item.is_success else 'FAILED',  # Utiliser le statut de publication
                 'feed_id': None,
                 'feed': None,
                 'validated_by': None,

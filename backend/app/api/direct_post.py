@@ -90,7 +90,8 @@ async def _add_to_queue_with_priority(post_data: DirectPostRequest, db: Session,
         
         if config and config.is_active:
             # Programmer à l'heure d'ouverture si on est avant
-            start_hour, start_min = map(int, config.start_time.split(':'))
+            start_hour = config.start_time.hour
+            start_min = config.start_time.minute
             today_start = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
             
             if now < today_start:

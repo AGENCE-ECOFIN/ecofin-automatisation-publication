@@ -247,7 +247,7 @@ def manage_post_state_transitions():
                 # Reporter au prochain créneau autorisé
                 config = schedule_service.get_active_config_for_network_now(item.network)
                 if config:
-                    next_time = schedule_service._get_next_available_time(config, now)
+                    next_time = schedule_service._calculate_next_available_time(config)
                     if next_time != "Maintenant":
                         try:
                             hour, minute = map(int, next_time.split(':'))
@@ -370,7 +370,7 @@ def process_publication_queue():
             else:
                 # Reporter au prochain créneau autorisé
                 config = schedule_service.get_active_config_for_network_now(item.network)
-                next_time = schedule_service._get_next_available_time(config, now)
+                next_time = schedule_service._calculate_next_available_time(config)
                 if next_time != "Maintenant":
                     from datetime import datetime
                     # Parser next_time et mettre à jour scheduled_at

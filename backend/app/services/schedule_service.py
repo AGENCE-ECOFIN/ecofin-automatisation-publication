@@ -116,14 +116,16 @@ class ScheduleService:
         now = datetime.now()
         
         # Si on est avant l'heure de début aujourd'hui
-        start_hour, start_min = map(int, config.start_time.split(':'))
+        start_hour = config.start_time.hour
+        start_min = config.start_time.minute
         today_start = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
         
         if now < today_start:
             return today_start.strftime("%H:%M")
 
         # Si on est après l'heure de fin aujourd'hui, chercher demain
-        end_hour, end_min = map(int, config.end_time.split(':'))
+        end_hour = config.end_time.hour
+        end_min = config.end_time.minute
         today_end = now.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
         
         if now > today_end:
@@ -251,8 +253,10 @@ class ScheduleService:
             return target_time
         
         # L'heure n'est pas autorisée, chercher le prochain créneau
-        start_hour, start_min = map(int, config.start_time.split(':'))
-        end_hour, end_min = map(int, config.end_time.split(':'))
+        start_hour = config.start_time.hour
+        start_min = config.start_time.minute
+        end_hour = config.end_time.hour
+        end_min = config.end_time.minute
         
         now = datetime.now()
         
