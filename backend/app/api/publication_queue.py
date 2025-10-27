@@ -250,25 +250,25 @@ def recalculate_queue_schedule(
         
         print("🔄 Recalcul des heures de publication avec délais cumulés...")
         
-        # Récupérer tous les posts programmés, groupés par réseau (délai global)
+        # Récupérer tous les posts programmés, groupés par feed et réseau
         scheduled_posts = db.query(PublicationQueue).filter(
             PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING'])
-        ).order_by(PublicationQueue.network, PublicationQueue.created_at).all()
+        ).order_by(PublicationQueue.feed_id, PublicationQueue.network, PublicationQueue.created_at).all()
         
-        # Grouper par réseau uniquement
-        posts_by_network = {}
+        # Grouper par feed_id et network
+        posts_by_feed_network = {}
         for post in scheduled_posts:
-            network = post.network
-            if network not in posts_by_network:
-                posts_by_network[network] = []
-            posts_by_network[network].append(post)
+            key = (post.feed_id, post.network)
+            if key not in posts_by_feed_network:
+                posts_by_feed_network[key] = []
+            posts_by_feed_network[key].append(post)
         
         schedule_service = ScheduleService(db)
         now = datetime.now(timezone.utc)
         recalculated_count = 0
         
-        for network, posts in posts_by_network.items():
-            print(f"\n📊 Réseau {network}: {len(posts)} posts à recalculer")
+        for (feed_id, network), posts in posts_by_feed_network.items():
+            print(f"\n📊 Feed #{feed_id} - {network}: {len(posts)} posts à recalculer")
             
             # Récupérer le délai configuré pour ce réseau (depuis NetworkConfig)
             from app.models.network_config import NetworkConfig
@@ -280,14 +280,14 @@ def recalculate_queue_schedule(
             
             print(f"   Délai configuré: {delay_minutes} minutes")
             
-            # Calculer les nouvelles heures en respectant les délais cumulés GLOBAUX
+            # Calculer les nouvelles heures en respectant les délais cumulés par feed et réseau
             base_time = now + timedelta(minutes=delay_minutes)
             
             for i, post in enumerate(posts):
                 old_time = post.scheduled_at
                 
                 if i == 0:
-                    # Premier post du réseau - ajuster aux horaires
+                    # Premier post du feed/réseau - ajuster aux horaires
                     new_time = schedule_service._adjust_time_to_schedule(network, base_time)
                 else:
                     # Posts suivants : après le post précédent + délai (sans ajustement horaire)
