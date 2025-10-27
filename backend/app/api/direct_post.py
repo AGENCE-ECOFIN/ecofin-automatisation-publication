@@ -145,12 +145,19 @@ async def _add_to_queue_with_priority(post_data: DirectPostRequest, db: Session,
 async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: Session, user_id: int):
     """Ajouter un post direct à la queue avec programmation personnalisée"""
     try:
+        print(f"📅 Programmation personnalisée pour {post_data.network}")
+        print(f"   Date demandée: {post_data.scheduled_at}")
+        
         # Vérifier que la date programmée est dans le futur
         now = datetime.now(timezone.utc)
+        print(f"   Heure actuelle: {now}")
+        
         if post_data.scheduled_at <= now:
+            print(f"❌ Date dans le passé: {post_data.scheduled_at} <= {now}")
             raise HTTPException(status_code=400, detail="La date de programmation doit être dans le futur")
         
         # Vérifier les horaires de publication pour la date programmée
+        print(f"🔍 Vérification des horaires pour {post_data.network}")
         schedule_service = ScheduleService(db)
         
         # Vérifier si l'heure programmée respecte les horaires d'ouverture
@@ -159,6 +166,8 @@ async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: S
             base_time=now,
             delay_minutes=0  # Pas de délai pour programmation personnalisée
         )
+        
+        print(f"📊 Résultat de la vérification: {schedule_result}")
         
         # Si l'heure programmée n'est pas optimale, proposer une alternative
         if schedule_result.get('adjusted') and schedule_result['optimal_time'] != post_data.scheduled_at:
@@ -171,6 +180,7 @@ async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: S
             # Pour l'instant, on garde l'heure demandée mais on log l'info
         
         # Créer l'entrée dans la queue avec programmation personnalisée
+        print(f"💾 Création de l'entrée dans la queue...")
         queue_item = PublicationQueue(
             feed_id=None,  # Post direct
             network=post_data.network,
@@ -190,6 +200,8 @@ async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: S
         db.add(queue_item)
         db.commit()
         db.refresh(queue_item)
+        
+        print(f"✅ Post programmé avec succès (ID: {queue_item.id})")
         
         return {
             "message": f"Post programmé avec succès pour le {post_data.scheduled_at.strftime('%d/%m/%Y à %H:%M')}",
