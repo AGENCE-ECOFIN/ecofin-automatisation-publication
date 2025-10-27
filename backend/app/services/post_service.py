@@ -613,7 +613,7 @@ class PostService:
                 schedule_status = schedule_service.is_publication_allowed_now(network)
                 print(f"   📊 Horaires {network}: {schedule_status}")
                 
-                # 3. Calculer l'heure de programmation
+                # 3. Calculer l'heure de programmation avec FIFO
                 delay_minutes = network_config.default_publication_delay
                 
                 # FIFO PAR FEED : Vérifier le dernier post du même feed
@@ -624,17 +624,16 @@ class PostService:
                 ).order_by(PublicationQueue.scheduled_at.desc()).first()
                 
                 if last_scheduled and last_scheduled.scheduled_at:
-                    # Programmer APRÈS le dernier post + délai
-                    base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                    # Programmer APRÈS le dernier post + délai (sans ajustement horaire)
+                    scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
                     print(f"   🔄 FIFO: Après post #{last_scheduled.id} à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                    print(f"   → Heure calculée: {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
                 else:
-                    # Premier post du feed
+                    # Premier post du feed - ajuster aux horaires puis appliquer délai
                     base_time = now + timedelta(minutes=delay_minutes)
+                    scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
                     print(f"   ✨ Premier post du feed #{post.feed_id} sur {network}")
-                
-                # 4. Ajuster selon les horaires configurés
-                scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
-                print(f"   📅 Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
+                    print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
                 
                 # 5. Déterminer le statut initial
                 config = schedule_service.get_active_config_for_network_now(network)

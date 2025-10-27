@@ -58,32 +58,21 @@ class PublicationQueueService:
             now = datetime.now(timezone.utc)
             
             if last_scheduled and last_scheduled.scheduled_at:
-                # Programmer APRÈS le dernier post programmé + le délai
-                base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
+                scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
                 print(f"🔄 FIFO FEED: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
+                print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
             else:
-                # Pas de post en attente pour ce feed, programmer normalement
+                # Pas de post en attente pour ce feed, programmer normalement avec ajustement horaire
                 base_time = now + timedelta(minutes=delay_minutes)
-                print(f"✨ Premier post du feed #{post.feed_id} sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
-            
-            # Utiliser le service de planification pour calculer l'heure optimale
-            from app.services.schedule_service import ScheduleService
-            schedule_service = ScheduleService(self.db)
-            schedule_result = schedule_service.calculate_optimal_schedule_time(
-                network=network,
-                base_time=base_time,  # ← Utiliser base_time au lieu de datetime.now()
-                delay_minutes=0  # ← Pas de délai supplémentaire car déjà calculé
-            )
-            
-            scheduled_at = schedule_result["optimal_time"]
+                from app.services.schedule_service import ScheduleService
+                schedule_service = ScheduleService(self.db)
+                scheduled_at = schedule_service._adjust_time_to_schedule(network, base_time)
+                print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
+                print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_at.strftime('%H:%M')}")
             
             print(f"📅 Post #{post_id} programmé pour {network}:")
             print(f"   Heure optimale: {scheduled_at.strftime('%d/%m/%Y %H:%M')}")
-            print(f"   Raison: {schedule_result['reason']}")
-            print(f"   Délai appliqué: {schedule_result['delay_minutes']} minutes")
-            if schedule_result.get('adjusted'):
-                print(f"   Heure originale: {schedule_result['original_time'].strftime('%d/%m/%Y %H:%M')}")
             
             # Récupérer la page de destination
             social_pages = feed.social_pages or {}
