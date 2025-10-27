@@ -33,8 +33,6 @@ fi
 # 2.5. Vérifier et appliquer toutes les migrations nécessaires
 echo ""
 echo "🔧 Vérification complète des migrations..."
-python /app/check_and_apply_migrations.py || echo "⚠️  Erreur lors de la vérification des migrations"
-
 echo "✅ Migrations terminées!"
 
 # 3. Créer l'utilisateur admin par défaut

@@ -45,7 +45,6 @@ RUN chmod +x /app/entrypoint.sh
 COPY --chown=appuser:appuser create_admin.py /app/create_admin.py
 COPY --chown=appuser:appuser app/init_db.py /app/init_db.py
 COPY --chown=appuser:appuser init_schedules.py /app/init_schedules.py
-COPY --chown=appuser:appuser check_and_apply_migrations.py /app/check_and_apply_migrations.py
 
 # Create logs and uploads directories with correct permissions
 RUN mkdir -p /app/logs /app/uploads/images && \
