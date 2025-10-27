@@ -38,12 +38,13 @@ class BlotatoService:
             'Content-Type': 'application/json'
         }
     
-    def _get_account_id(self, network: str) -> Optional[str]:
+    def _get_account_id(self, network: str, target_page_id: str = None) -> Optional[str]:
         """
         Récupère l'ID du compte Blotato pour un réseau donné depuis blotato_accounts.json
         
         Args:
             network: Nom du réseau ('linkedin', 'x', 'facebook', etc.)
+            target_page_id: ID de la page/compte spécifique à utiliser (optionnel)
             
         Returns:
             L'ID du compte ou None si non trouvé
@@ -62,15 +63,34 @@ class BlotatoService:
             with open(blotato_file, 'r', encoding='utf-8') as f:
                 blotato_accounts = json.load(f)
             
-            # Récupérer le premier compte pour le réseau demandé
             network_accounts = blotato_accounts.get(network.lower(), [])
-            if network_accounts and len(network_accounts) > 0:
-                account_id = network_accounts[0].get('accountId')
-                logger.info(f"Account ID récupéré pour {network}: {account_id}")
-                return account_id
-            else:
+            if not network_accounts or len(network_accounts) == 0:
                 logger.warning(f"Aucun compte trouvé pour {network}")
                 return None
+            
+            # Si un target_page_id est fourni, chercher le compte correspondant
+            if target_page_id:
+                for account in network_accounts:
+                    # Pour X, comparer directement avec accountId
+                    if network.lower() == 'x':
+                        if account.get('accountId') == target_page_id:
+                            logger.info(f"Account ID trouvé pour {network} avec target_page_id {target_page_id}: {account.get('accountId')}")
+                            return account.get('accountId')
+                    # Pour Facebook/LinkedIn, chercher dans les pages
+                    else:
+                        pages = account.get('pages', [])
+                        for page in pages:
+                            if page.get('pageId') == target_page_id:
+                                logger.info(f"Account ID trouvé pour {network} avec pageId {target_page_id}: {account.get('accountId')}")
+                                return account.get('accountId')
+                
+                logger.warning(f"Aucun compte trouvé pour {network} avec target_page_id {target_page_id}")
+                return None
+            
+            # Fallback: récupérer le premier compte pour le réseau demandé
+            account_id = network_accounts[0].get('accountId')
+            logger.info(f"Account ID récupéré pour {network} (fallback): {account_id}")
+            return account_id
                 
         except Exception as e:
             logger.error(f"Erreur lors de la récupération de l'account ID pour {network}: {e}")
@@ -106,7 +126,7 @@ class BlotatoService:
                 return False, f"Réseau {network} non supporté par Blotato", None, None, None
             
             # Récupérer l'ID du compte
-            account_id = self._get_account_id(network.lower())
+            account_id = self._get_account_id(network.lower(), target_page_id)
             if not account_id:
                 return False, f"Aucun compte configuré pour {network}", None, None, None
             
