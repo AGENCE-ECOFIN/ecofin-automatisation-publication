@@ -229,6 +229,10 @@ async def create_direct_post(
     """
     try:
         print(f"\n📤 POST DIRECT sur {post_data.network}")
+        print(f"   Contenu: {post_data.content[:50]}...")
+        print(f"   Schedule type: {post_data.schedule_type}")
+        print(f"   Scheduled at: {post_data.scheduled_at}")
+        print(f"   Force immediate: {post_data.force_immediate}")
         
         # 1. Vérifier la configuration du réseau
         network_config = db.query(NetworkConfig).filter(
@@ -275,8 +279,8 @@ async def create_direct_post(
             # Publication immédiate
             print(f"🚀 Publication IMMÉDIATE sur {post_data.network}")
             return await _publish_immediately(post_data, db, current_user.id)
-        elif post_data.schedule_type == "scheduled" and post_data.scheduled_at:
-            # Programmation personnalisée
+        elif post_data.scheduled_at is not None:
+            # Programmation personnalisée (si une date est fournie, peu importe le schedule_type)
             print(f"📅 Programmation PERSONNALISÉE sur {post_data.network} pour {post_data.scheduled_at}")
             return await _add_to_queue_with_custom_schedule(post_data, db, current_user.id)
         else:
