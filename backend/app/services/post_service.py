@@ -487,25 +487,23 @@ class PostService:
                     # Délai : depuis la config GLOBALE
                     delay_minutes = network_config.default_publication_delay
                     
-                    # 🔥 FIFO PAR FEED : Vérifier s'il y a déjà des posts programmés sur CE RÉSEAU pour CE FEED
+                    # 🔥 DÉLAI GLOBAL PAR RÉSEAU : Vérifier le dernier post sur ce réseau (tous feeds confondus)
                     last_scheduled = self.db.query(PublicationQueue).filter(
-                        PublicationQueue.feed_id == post.feed_id,
                         PublicationQueue.network == network,
                         PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
                     ).order_by(PublicationQueue.scheduled_at.desc()).first()
                     
                     if last_scheduled and last_scheduled.scheduled_at:
-                        # Programmer APRÈS le dernier post programmé + le délai
-                        base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                        print(f"🔄 FIFO FEED: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                        print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
+                        # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
+                        scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                        print(f"🔄 DÉLAI GLOBAL: Dernier post sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                        print(f"   → Heure calculée: {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
                     else:
-                        # Pas de post en attente pour ce feed, programmer normalement
+                        # Pas de post en attente sur ce réseau, programmer normalement avec ajustement horaire
                         base_time = now + timedelta(minutes=delay_minutes)
-                        print(f"✨ Premier post du feed #{post.feed_id} sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
-                    
-                    # Vérifier si cette heure est dans un créneau autorisé et ajuster si nécessaire
-                    scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                        scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                        print(f"✨ Premier post sur {network}")
+                        print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
                     print(f"📅 Heure finale programmée: {scheduled_time.strftime('%H:%M')}")
                     
                     # Déterminer le statut selon l'heure programmée et les horaires configurés
@@ -616,9 +614,8 @@ class PostService:
                 # 3. Calculer l'heure de programmation avec FIFO
                 delay_minutes = network_config.default_publication_delay
                 
-                # FIFO PAR FEED : Vérifier le dernier post du même feed
+                # DÉLAI GLOBAL PAR RÉSEAU : Vérifier le dernier post sur ce réseau (tous feeds confondus)
                 last_scheduled = self.db.query(PublicationQueue).filter(
-                    PublicationQueue.feed_id == post.feed_id,
                     PublicationQueue.network == network,
                     PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
                 ).order_by(PublicationQueue.scheduled_at.desc()).first()
@@ -626,13 +623,13 @@ class PostService:
                 if last_scheduled and last_scheduled.scheduled_at:
                     # Programmer APRÈS le dernier post + délai (sans ajustement horaire)
                     scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                    print(f"   🔄 FIFO: Après post #{last_scheduled.id} à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                    print(f"   🔄 DÉLAI GLOBAL: Après post #{last_scheduled.id} à {last_scheduled.scheduled_at.strftime('%H:%M')}")
                     print(f"   → Heure calculée: {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
                 else:
                     # Premier post du feed - ajuster aux horaires puis appliquer délai
                     base_time = now + timedelta(minutes=delay_minutes)
                     scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
-                    print(f"   ✨ Premier post du feed #{post.feed_id} sur {network}")
+                    print(f"   ✨ Premier post sur {network}")
                     print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
                 
                 # 5. Déterminer le statut initial

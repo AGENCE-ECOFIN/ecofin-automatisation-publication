@@ -44,13 +44,16 @@ class PublicationQueueService:
             generated_content = post.generated_content or {}
             content = generated_content.get(network, post.content)
             
-            # Calculer le délai de publication avec vérification des horaires
-            publication_timing = feed.publication_timing or {}
-            delay_minutes = publication_timing.get(network, 30)
+            # Calculer le délai de publication depuis NetworkConfig (délai global par réseau)
+            from app.models.network_config import NetworkConfig
+            network_config = self.db.query(NetworkConfig).filter(
+                NetworkConfig.network == network,
+                NetworkConfig.is_active == True
+            ).first()
+            delay_minutes = network_config.default_publication_delay if network_config else 30
             
-            # 🔥 FIFO PAR FEED : Vérifier s'il y a déjà des posts programmés sur CE RÉSEAU pour CE FEED
+            # 🔥 DÉLAI GLOBAL PAR RÉSEAU : Vérifier le dernier post sur ce réseau (tous feeds confondus)
             last_scheduled = self.db.query(PublicationQueue).filter(
-                PublicationQueue.feed_id == post.feed_id,
                 PublicationQueue.network == network,
                 PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
             ).order_by(PublicationQueue.scheduled_at.desc()).first()
@@ -60,7 +63,7 @@ class PublicationQueueService:
             if last_scheduled and last_scheduled.scheduled_at:
                 # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
                 scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                print(f"🔄 FIFO FEED: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                print(f"🔄 DÉLAI GLOBAL: Dernier post sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
                 print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
             else:
                 # Pas de post en attente pour ce feed, programmer normalement avec ajustement horaire
@@ -68,7 +71,7 @@ class PublicationQueueService:
                 from app.services.schedule_service import ScheduleService
                 schedule_service = ScheduleService(self.db)
                 scheduled_at = schedule_service._adjust_time_to_schedule(network, base_time)
-                print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
+                print(f"✨ Premier post sur {network}")
                 print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_at.strftime('%H:%M')}")
             
             print(f"📅 Post #{post_id} programmé pour {network}:")
