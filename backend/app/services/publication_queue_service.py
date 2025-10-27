@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from app.models.publication_queue import PublicationQueue
 from app.models.post import Post
 from app.models.feed import Feed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict
 import json
 
@@ -48,13 +48,32 @@ class PublicationQueueService:
             publication_timing = feed.publication_timing or {}
             delay_minutes = publication_timing.get(network, 30)
             
+            # 🔥 FIFO PAR FEED : Vérifier s'il y a déjà des posts programmés sur CE RÉSEAU pour CE FEED
+            last_scheduled = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.network == network,
+                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+            ).order_by(PublicationQueue.scheduled_at.desc()).first()
+            
+            now = datetime.now(timezone.utc)
+            
+            if last_scheduled and last_scheduled.scheduled_at:
+                # Programmer APRÈS le dernier post programmé + le délai
+                base_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                print(f"🔄 FIFO FEED: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                print(f"   → Heure calculée: {base_time.strftime('%H:%M')} (après {delay_minutes}min)")
+            else:
+                # Pas de post en attente pour ce feed, programmer normalement
+                base_time = now + timedelta(minutes=delay_minutes)
+                print(f"✨ Premier post du feed #{post.feed_id} sur {network}, heure calculée: {base_time.strftime('%H:%M')}")
+            
             # Utiliser le service de planification pour calculer l'heure optimale
             from app.services.schedule_service import ScheduleService
             schedule_service = ScheduleService(self.db)
             schedule_result = schedule_service.calculate_optimal_schedule_time(
                 network=network,
-                base_time=datetime.now(),
-                delay_minutes=delay_minutes
+                base_time=base_time,  # ← Utiliser base_time au lieu de datetime.now()
+                delay_minutes=0  # ← Pas de délai supplémentaire car déjà calculé
             )
             
             scheduled_at = schedule_result["optimal_time"]
