@@ -1,0 +1,53 @@
+[tool.pylint]
+# Configuration Pylint pour le projet EcoFin Publication
+
+# Chemins à inclure
+init-hook='import sys; sys.path.append("backend")'
+
+# Chemins à ignorer
+ignore-paths = [
+    "backend/venv",
+    "backend/__pycache__",
+    "backend/alembic/versions",
+    "frontend/node_modules",
+    "frontend/build"
+]
+
+# Messages à ignorer
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0116",  # missing-function-docstring
+    "W0613",  # unused-argument
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments
+    "C0103",  # invalid-name
+]
+
+# Variables d'environnement
+env = [
+    "DATABASE_URL",
+    "REDIS_URL",
+    "SECRET_KEY",
+    "OPENAI_API_KEY",
+    "BLOTATO_API_KEY"
+]
+
+# Format de sortie
+output-format = "text"
+reports = false
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "celery.*",
+    "feedparser.*",
+    "minio.*",
+    "openai.*"
+]
+ignore_missing_imports = true

@@ -27,24 +27,26 @@ async def _publish_immediately(post_data: DirectPostRequest, db: Session, user_i
     try:
         blotato_service = BlotatoService()
         
-        success, message, publication_url = blotato_service.publish_to_network(
+        success, message, publication_url, processed_media_urls, post_submission_id = blotato_service.publish_to_network(
             network=post_data.network,
             content=post_data.content,
             media_urls=post_data.media_urls or [],
-            target_page_id=post_data.target_page_id
+            target_page_id=post_data.target_page_id,
+            is_direct_post=True  # Post direct - upload vers MinIO
         )
         
         if success:
             # Enregistrer dans l'historique
             from app.models.publication import Publication
             publication = Publication(
-                post_id=None,  # Post direct
                 feed_id=None,  # Post direct
                 network=post_data.network,
                 content=post_data.content,
                 published_url=publication_url,
                 is_success=True,
-                published_at=datetime.now(timezone.utc)
+                published_at=datetime.now(timezone.utc),
+                media_urls=processed_media_urls or [],
+                extra_data={'postSubmissionId': post_submission_id} if post_submission_id else None
             )
             db.add(publication)
             db.commit()
@@ -60,14 +62,14 @@ async def _publish_immediately(post_data: DirectPostRequest, db: Session, user_i
             # Enregistrer l'échec
             from app.models.publication import Publication
             publication = Publication(
-                post_id=None,
                 feed_id=None,
                 network=post_data.network,
                 content=post_data.content,
                 published_url=None,
                 is_success=False,
                 error_message=message,
-                published_at=datetime.now(timezone.utc)
+                published_at=datetime.now(timezone.utc),
+                media_urls=processed_media_urls or []
             )
             db.add(publication)
             db.commit()
@@ -81,34 +83,33 @@ async def _publish_immediately(post_data: DirectPostRequest, db: Session, user_i
 async def _add_to_queue_with_priority(post_data: DirectPostRequest, db: Session, user_id: int, reasons: List[str]):
     """Ajouter un post direct à la queue avec priorité"""
     try:
-        # Calculer l'heure de programmation avec priorité
+        # Calculer l'heure de programmation optimale avec vérification des horaires et délais
         now = datetime.now(timezone.utc)
         
-        # Posts directs ont priorité - programmer immédiatement si horaires OK
+        # Utiliser le service de planification pour calculer l'heure optimale
         schedule_service = ScheduleService(db)
-        config = schedule_service.get_active_config_for_network_now(post_data.network)
+        schedule_result = schedule_service.calculate_optimal_schedule_time(
+            network=post_data.network,
+            base_time=now
+        )
         
-        if config and config.is_active:
-            # Programmer à l'heure d'ouverture si on est avant
-            start_hour = config.start_time.hour
-            start_min = config.start_time.minute
-            today_start = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-            
-            if now < today_start:
-                scheduled_time = today_start
-                status = "SCHEDULED"
-            else:
-                # Programmer immédiatement (priorité)
-                scheduled_time = now
-                status = "PENDING"
-        else:
-            # Pas de config horaire, programmer immédiatement
-            scheduled_time = now
+        scheduled_time = schedule_result["optimal_time"]
+        
+        # Déterminer le statut selon l'heure calculée
+        if scheduled_time <= now + timedelta(minutes=5):  # Dans les 5 prochaines minutes
             status = "PENDING"
+        else:
+            status = "SCHEDULED"
+        
+        print(f"📅 Post direct programmé pour {post_data.network}:")
+        print(f"   Heure optimale: {scheduled_time.strftime('%d/%m/%Y %H:%M')}")
+        print(f"   Raison: {schedule_result['reason']}")
+        print(f"   Délai appliqué: {schedule_result['delay_minutes']} minutes")
+        if schedule_result.get('adjusted'):
+            print(f"   Heure originale: {schedule_result['original_time'].strftime('%d/%m/%Y %H:%M')}")
         
         # Créer l'entrée dans la queue avec priorité
         queue_item = PublicationQueue(
-            post_id=None,  # Post direct
             feed_id=None,  # Post direct
             network=post_data.network,
             content=post_data.content,
@@ -151,11 +152,26 @@ async def _add_to_queue_with_custom_schedule(post_data: DirectPostRequest, db: S
         
         # Vérifier les horaires de publication pour la date programmée
         schedule_service = ScheduleService(db)
-        # Note: Ici on pourrait ajouter une vérification plus sophistiquée des horaires
+        
+        # Vérifier si l'heure programmée respecte les horaires d'ouverture
+        schedule_result = schedule_service.calculate_optimal_schedule_time(
+            network=post_data.network,
+            base_time=now,
+            delay_minutes=0  # Pas de délai pour programmation personnalisée
+        )
+        
+        # Si l'heure programmée n'est pas optimale, proposer une alternative
+        if schedule_result.get('adjusted') and schedule_result['optimal_time'] != post_data.scheduled_at:
+            print(f"⚠️ Heure programmée non optimale pour {post_data.network}")
+            print(f"   Heure demandée: {post_data.scheduled_at.strftime('%d/%m/%Y %H:%M')}")
+            print(f"   Heure optimale: {schedule_result['optimal_time'].strftime('%d/%m/%Y %H:%M')}")
+            print(f"   Raison: {schedule_result['reason']}")
+            
+            # Optionnel: Ajuster automatiquement ou laisser l'utilisateur choisir
+            # Pour l'instant, on garde l'heure demandée mais on log l'info
         
         # Créer l'entrée dans la queue avec programmation personnalisée
         queue_item = PublicationQueue(
-            post_id=None,  # Post direct
             feed_id=None,  # Post direct
             network=post_data.network,
             content=post_data.content,

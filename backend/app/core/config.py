@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     APP_NAME: str = "EcoFin Publication"
     FRONTEND_URL: str = "http://localhost:3000"
     
+    # MinIO Configuration pour le stockage des images des posts directs
+    MINIO_ENDPOINT: str = "185.143.103.162:9000"  # Votre MinIO en ligne
+    MINIO_ACCESS_KEY: str = "publication"
+    MINIO_SECRET_KEY: str = "itX3ADweDBgxKbabbcHqZmNZCsNHHMtZ"
+    MINIO_SECURE: bool = False  # HTTP pour cette IP
+    MINIO_PUBLIC_URL: str = "http://185.143.103.162:9000"  # URL publique de votre MinIO
+    
     class Config:
         env_file = ".env"
 

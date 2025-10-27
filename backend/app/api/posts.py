@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate
+from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest
 from app.schemas.publication import PublicationResponse
 from app.services.post_service import PostService
 from app.api.dependencies import get_current_user
@@ -245,4 +245,69 @@ def get_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post non trouvé")
     return post
+
+
+@router.post("/{post_id}/networks/{network}/validate")
+def validate_network(
+    post_id: int,
+    network: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Valider un réseau spécifique d'un post"""
+    print(f"🌐 [API] Validation réseau {network} pour post {post_id} par user {current_user.id}")
+    post_service = PostService(db)
+    post = post_service.validate_network(post_id, network, current_user.id)
+    if not post:
+        print(f"❌ [API] Post {post_id} non trouvé")
+        raise HTTPException(status_code=404, detail="Post non trouvé")
+    print(f"✅ [API] Réseau {network} validé avec succès")
+    return {"message": f"Réseau {network} validé", "post": post}
+
+
+@router.post("/{post_id}/networks/{network}/reject")
+def reject_network(
+    post_id: int,
+    network: str,
+    request: NetworkValidationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Rejeter un réseau spécifique d'un post"""
+    print(f"🌐 [API] Rejet réseau {network} pour post {post_id} par user {current_user.id}")
+    print(f"🔍 [API] Raison de rejet: {request.rejection_reason}")
+    post_service = PostService(db)
+    post = post_service.reject_network(
+        post_id, 
+        network, 
+        current_user.id, 
+        request.rejection_reason
+    )
+    if not post:
+        print(f"❌ [API] Post {post_id} non trouvé")
+        raise HTTPException(status_code=404, detail="Post non trouvé")
+    print(f"✅ [API] Réseau {network} rejeté avec succès")
+    return {"message": f"Réseau {network} rejeté", "post": post}
+
+
+@router.post("/{post_id}/networks/{network}/restore")
+def restore_network(
+    post_id: int,
+    network: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Restaurer un réseau spécifique d'un post (remettre en brouillon)"""
+    print(f"🌐 [API] Restauration réseau {network} pour post {post_id} par user {current_user.id}")
+    post_service = PostService(db)
+    post = post_service.restore_network(
+        post_id, 
+        network, 
+        current_user.id
+    )
+    if not post:
+        print(f"❌ [API] Post {post_id} non trouvé")
+        raise HTTPException(status_code=404, detail="Post non trouvé")
+    print(f"✅ [API] Réseau {network} restauré avec succès")
+    return {"message": f"Réseau {network} restauré", "post": post}
 

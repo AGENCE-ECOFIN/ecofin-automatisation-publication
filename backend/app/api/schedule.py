@@ -159,3 +159,20 @@ def initialize_default_schedules(
     schedule_service = ScheduleService(db)
     schedule_service.create_default_schedules()
     return {"message": "Configurations par défaut créées avec succès"}
+
+@router.post("/recalculate-queue/{network}")
+async def recalculate_queue_for_network(
+    network: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Recalculer les horaires des posts en attente pour un réseau"""
+    try:
+        schedule_service = ScheduleService(db)
+        updated_count = schedule_service.recalculate_queue_for_network(network)
+        return {
+            "message": f"Recalcul effectué pour {updated_count} posts en attente",
+            "updated_count": updated_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du recalcul: {str(e)}")

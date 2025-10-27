@@ -26,6 +26,11 @@ class PostUpdate(BaseModel):
 class PostValidate(BaseModel):
     generated_content: dict
 
+class NetworkValidationRequest(BaseModel):
+    network: str
+    action: str  # 'validate' ou 'reject'
+    rejection_reason: Optional[str] = None
+
 
 class FeedInfo(BaseModel):
     id: int
@@ -44,6 +49,7 @@ class PostResponse(PostBase):
     feed: Optional[FeedInfo] = None  # Inclure le feed complet
     status: str
     generated_content: Optional[dict] = None
+    network_validations: Optional[dict] = None
     validated_by: Optional[int] = None
     validated_at: Optional[datetime] = None
     created_at: datetime

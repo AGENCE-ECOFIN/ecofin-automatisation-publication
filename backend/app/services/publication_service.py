@@ -20,7 +20,7 @@ class PublicationService:
         # Utiliser le service Blotato centralisé
         self.blotato = BlotatoService()
     
-    def publish_to_network(self, network: str, content: str, media_urls: List[str] = None, target_page_id: str = None) -> Tuple[bool, str, Optional[str]]:
+    def publish_to_network(self, network: str, content: str, media_urls: List[str] = None, target_page_id: str = None, is_direct_post: bool = False) -> Tuple[bool, str, Optional[str], Optional[str]]:
         """
         Publie un contenu sur un réseau social via Blotato API
         
@@ -29,11 +29,15 @@ class PublicationService:
             content: Contenu à publier
             media_urls: URLs des médias (optionnel)
             target_page_id: ID de la page cible (optionnel)
+            is_direct_post: True si c'est un post direct, False si post programmé
             
         Returns:
-            Tuple[success, message, publication_url]
+            Tuple[success, message, publication_url, post_submission_id]
         """
-        return self.blotato.publish_to_network(network, content, media_urls, target_page_id=target_page_id)
+        success, message, publication_url, processed_media_urls, post_submission_id = self.blotato.publish_to_network(
+            network, content, media_urls, target_page_id=target_page_id, is_direct_post=is_direct_post
+        )
+        return success, message, publication_url, post_submission_id
     
     
     def publish_to_multiple_networks(self, content: str, networks: List[str], media_urls: List[str] = None) -> Dict[str, Dict]:

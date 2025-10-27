@@ -8,11 +8,11 @@ from datetime import datetime
 
 class ScheduleConfigBase(BaseModel):
     network: str = Field(..., description="Réseau social (facebook, linkedin, x)")
-    day_type: str = Field(..., description="Type de jour (weekday, weekend, holiday)")
+    day_type: Optional[str] = Field(None, description="Type de jour (weekday, weekend, holiday)")
+    day_of_week: Optional[int] = Field(None, description="Jour de la semaine (0=Lundi, 6=Dimanche)")
     start_time: str = Field(..., description="Heure de début (format HH:MM)")
     end_time: str = Field(..., description="Heure de fin (format HH:MM)")
     is_active: bool = Field(True, description="Activer/désactiver ce créneau")
-    max_posts_per_day: int = Field(5, ge=1, le=50, description="Maximum de publications par jour")
     specific_days: Optional[List[int]] = Field(None, description="Jours spécifiques (0-6, 0=Lundi)")
     period_start: Optional[datetime] = Field(None, description="Début de période spéciale")
     period_end: Optional[datetime] = Field(None, description="Fin de période spéciale")
@@ -47,6 +47,13 @@ class ScheduleConfigBase(BaseModel):
                 raise ValueError("L'heure de fin doit être après l'heure de début")
         return v
 
+    @validator('day_of_week')
+    def validate_day_of_week(cls, v):
+        """Valide le jour de la semaine"""
+        if v is not None and not (0 <= v <= 6):
+            raise ValueError("Le jour de la semaine doit être entre 0 (Lundi) et 6 (Dimanche)")
+        return v
+
     @validator('specific_days')
     def validate_specific_days(cls, v):
         """Valide les jours spécifiques"""
@@ -59,7 +66,9 @@ class ScheduleConfigBase(BaseModel):
     @validator('day_type')
     def validate_day_type(cls, v):
         """Valide le type de jour"""
-        allowed_types = ['weekday', 'weekend', 'holiday']
+        if v is None:
+            return v
+        allowed_types = ['weekday', 'weekend', 'holiday', 'specific', 'global']
         if v not in allowed_types:
             raise ValueError(f"Type de jour invalide. Utilisez: {', '.join(allowed_types)}")
         return v
@@ -80,6 +89,7 @@ class ScheduleConfigCreate(ScheduleConfigBase):
 class ScheduleConfigUpdate(BaseModel):
     network: Optional[str] = None
     day_type: Optional[str] = None
+    day_of_week: Optional[int] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     is_active: Optional[bool] = None

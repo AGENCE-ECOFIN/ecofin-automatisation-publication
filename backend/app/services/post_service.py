@@ -39,11 +39,13 @@ class PostService:
         from app.models.publication_queue import PublicationQueue
         from app.models.publication import Publication
         
+        # Plus besoin de charger le mapping MinIO car les URLs sont stockées dans media_urls
+        
         result = []
         
         # 1. Récupérer les posts directs dans la queue (programmés/en attente)
         queue_direct_posts = self.db.query(PublicationQueue).filter(
-            PublicationQueue.post_id.is_(None)
+            PublicationQueue.feed_id.is_(None)
         ).order_by(PublicationQueue.created_at.desc()).all()
         
         for queue_item in queue_direct_posts:
@@ -51,14 +53,30 @@ class PostService:
             extra_data = queue_item.extra_data or {}
             is_direct = extra_data.get('is_direct_post', False)
             
+            # Utiliser la première image des media_urls stockées
+            associated_image = None
+            if queue_item.media_urls and len(queue_item.media_urls) > 0:
+                associated_image = queue_item.media_urls[0]
+                print(f"🖼️ Image trouvée dans media_urls pour queue item {queue_item.id}: {associated_image}")
+            
+            # Créer les validations réseau appropriées
+            network_validations = {
+                queue_item.network: {
+                    'status': 'draft' if queue_item.status in ['SCHEDULED', 'PENDING'] else 'published',
+                    'validated_by': 'system',
+                    'validated_at': queue_item.created_at.isoformat(),
+                    'content': queue_item.content
+                }
+            }
+            
             result.append({
                 'id': f"direct_{queue_item.id}",
-                'title': f"Post direct - {queue_item.network}",
+                'title': f"Post direct programmé - {queue_item.network}",
                 'content': queue_item.content,
                 'source_url': None,
-                'source_image': queue_item.media_urls[0] if queue_item.media_urls else None,
+                'source_image': associated_image,  # Utiliser l'image depuis media_urls
                 'generated_content': {queue_item.network: queue_item.content},
-                'status': queue_item.status,  # Utiliser le statut de la queue
+                'status': 'draft' if queue_item.status in ['SCHEDULED', 'PENDING'] else 'published',
                 'feed_id': None,
                 'feed': None,
                 'validated_by': None,
@@ -71,38 +89,55 @@ class PostService:
                 'queue_status': queue_item.status,
                 'is_direct': True,
                 'publication_url': queue_item.publication_url,
-                'is_immediate': False  # Post programmé, pas immédiat
+                'is_immediate': False,
+                'network_validations': network_validations
             })
         
         # 2. Récupérer les posts directs publiés immédiatement depuis l'historique
-        # (post_id = NULL ET feed_id = NULL dans Publication)
+        # (feed_id = NULL dans Publication)
         immediate_direct_posts = self.db.query(Publication).filter(
-            Publication.post_id.is_(None),
             Publication.feed_id.is_(None)
         ).order_by(Publication.published_at.desc()).all()
         
         for pub_item in immediate_direct_posts:
+            # Utiliser la première image des media_urls stockées
+            associated_image = None
+            if pub_item.media_urls and len(pub_item.media_urls) > 0:
+                associated_image = pub_item.media_urls[0]
+                print(f"🖼️ Image trouvée dans media_urls pour post {pub_item.id}: {associated_image}")
+            
+            # Créer les validations réseau appropriées
+            network_validations = {
+                pub_item.network: {
+                    'status': 'published' if pub_item.is_success else 'failed',
+                    'validated_by': 'system',
+                    'validated_at': pub_item.published_at.isoformat(),
+                    'content': pub_item.content
+                }
+            }
+            
             result.append({
                 'id': f"immediate_{pub_item.id}",
                 'title': f"Post direct - {pub_item.network}",
                 'content': pub_item.content,
                 'source_url': None,
-                'source_image': None,
+                'source_image': associated_image,  # Utiliser l'image depuis media_urls
                 'generated_content': {pub_item.network: pub_item.content},
-                'status': 'PUBLISHED' if pub_item.is_success else 'FAILED',  # Utiliser le statut de publication
+                'status': 'published' if pub_item.is_success else 'failed',
                 'feed_id': None,
                 'feed': None,
                 'validated_by': None,
                 'validated_at': None,
-                'created_at': pub_item.published_at,  # Utiliser published_at comme created_at
+                'created_at': pub_item.published_at,
                 'updated_at': pub_item.published_at,
                 'network': pub_item.network,
-                'scheduled_at': None,  # Pas de programmation pour les posts immédiats
+                'scheduled_at': None,
                 'published_at': pub_item.published_at,
                 'queue_status': 'PUBLISHED' if pub_item.is_success else 'FAILED',
                 'is_direct': True,
                 'publication_url': pub_item.published_url,
-                'is_immediate': True  # Marquer comme post immédiat
+                'is_immediate': True,
+                'network_validations': network_validations
             })
         
         # Trier par date de création (plus récent en premier)
@@ -149,8 +184,263 @@ class PostService:
             return db_post
             
         except Exception as e:
+            print(f"❌ Erreur validation post #{post_id}: {e}")
             self.db.rollback()
-            raise
+            return None
+
+    def validate_network(self, post_id: int, network: str, user_id: int) -> Optional[Post]:
+        """Valider un réseau spécifique d'un post"""
+        try:
+            print(f"🚀 [VALIDATE] Début validation du réseau {network} pour post #{post_id} par user #{user_id}")
+            
+            db_post = self.get_post_by_id(post_id)
+            if not db_post:
+                print(f"❌ [VALIDATE] Post #{post_id} non trouvé")
+                return None
+
+            print(f"📰 [VALIDATE] Post trouvé: {db_post.title}")
+            print(f"🔍 [VALIDATE] Validations actuelles: {db_post.network_validations}")
+
+            # Initialiser network_validations si nécessaire
+            if not db_post.network_validations:
+                db_post.network_validations = {}
+                print(f"🆕 [VALIDATE] Initialisation des validations pour post #{post_id}")
+
+            # Mettre à jour le statut du réseau
+            new_validation = {
+                "status": "validated",
+                "validated_by": user_id,
+                "validated_at": datetime.utcnow().isoformat()
+            }
+            db_post.network_validations[network] = new_validation
+            print(f"✅ [VALIDATE] Validation du réseau {network} pour post #{post_id}")
+            print(f"🔍 [VALIDATE] Nouvelle validation: {new_validation}")
+
+            # Forcer la mise à jour de l'objet JSON
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(db_post, 'network_validations')
+
+            # Vérifier si tous les réseaux sont validés
+            all_networks = list(db_post.generated_content.keys()) if db_post.generated_content else []
+            validated_networks = [
+                net for net, validation in db_post.network_validations.items() 
+                if validation.get("status") == "validated"
+            ]
+
+            print(f"🔍 [VALIDATE] Réseaux générés: {all_networks}")
+            print(f"🔍 [VALIDATE] Réseaux validés: {validated_networks}")
+
+            # Mettre à jour le statut global du post
+            if len(validated_networks) == len(all_networks) and all_networks:
+                db_post.status = "validated"
+                db_post.validated_by = user_id
+                db_post.validated_at = datetime.utcnow()
+                print(f"🎯 [VALIDATE] Post #{post_id} entièrement validé!")
+
+            print(f"💾 [VALIDATE] Sauvegarde en base de données...")
+            self.db.commit()
+            self.db.refresh(db_post)
+            
+            # Ajouter le réseau validé individuellement à la queue
+            self._add_network_to_publication_queue(db_post, network)
+            print(f"✅ [VALIDATE] Réseau {network} validé et ajouté à la queue pour post #{post_id}")
+            
+            # Vérifier si tous les réseaux sont validés pour le statut global
+            if len(validated_networks) == len(all_networks) and all_networks:
+                print(f"🎯 [VALIDATE] Post #{post_id} entièrement validé!")
+            
+            print(f"🔍 [VALIDATE] Validations finales: {db_post.network_validations}")
+            return db_post
+            
+        except Exception as e:
+            print(f"❌ [VALIDATE] Erreur validation réseau {network} pour post #{post_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.db.rollback()
+            return None
+
+    def reject_network(self, post_id: int, network: str, user_id: int, rejection_reason: str = None) -> Optional[Post]:
+        """Rejeter un réseau spécifique d'un post"""
+        try:
+            print(f"🚀 [REJECT] Début rejet du réseau {network} pour post #{post_id} par user #{user_id}")
+            print(f"🔍 [REJECT] Raison de rejet: {rejection_reason}")
+            
+            db_post = self.get_post_by_id(post_id)
+            if not db_post:
+                print(f"❌ [REJECT] Post #{post_id} non trouvé")
+                return None
+
+            print(f"📰 [REJECT] Post trouvé: {db_post.title}")
+            print(f"🔍 [REJECT] Validations actuelles: {db_post.network_validations}")
+
+            # Initialiser network_validations si nécessaire
+            if not db_post.network_validations:
+                db_post.network_validations = {}
+                print(f"🆕 [REJECT] Initialisation des validations pour post #{post_id}")
+
+            # Vérifier si c'est une restauration (rejection_reason est None)
+            if rejection_reason is None:
+                # Restauration : remettre en brouillon
+                new_validation = {
+                    "status": "draft",
+                    "validated_by": user_id,
+                    "validated_at": datetime.utcnow().isoformat(),
+                    "rejection_reason": None
+                }
+                db_post.network_validations[network] = new_validation
+                print(f"🔄 [REJECT] Restauration du réseau {network} pour post #{post_id}")
+                print(f"🔍 [REJECT] Nouvelle validation: {new_validation}")
+            else:
+                # Vrai rejet
+                new_validation = {
+                    "status": "rejected",
+                    "validated_by": user_id,
+                    "validated_at": datetime.utcnow().isoformat(),
+                    "rejection_reason": rejection_reason
+                }
+                db_post.network_validations[network] = new_validation
+                print(f"❌ [REJECT] Rejet du réseau {network} pour post #{post_id}")
+                print(f"🔍 [REJECT] Nouvelle validation: {new_validation}")
+
+            # Forcer la mise à jour de l'objet JSON
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(db_post, 'network_validations')
+
+            print(f"💾 [REJECT] Sauvegarde en base de données...")
+            self.db.commit()
+            self.db.refresh(db_post)
+            
+            print(f"✅ [REJECT] Réseau {network} traité pour post #{post_id}")
+            print(f"🔍 [REJECT] Validations finales: {db_post.network_validations}")
+            
+            return db_post
+            
+        except Exception as e:
+            print(f"❌ [REJECT] Erreur traitement réseau {network} pour post #{post_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.db.rollback()
+            return None
+
+    def restore_network(self, post_id: int, network: str, user_id: int) -> Optional[Post]:
+        """Restaurer un réseau spécifique d'un post (remettre en brouillon)"""
+        try:
+            print(f"🔄 [RESTORE] Début restauration du réseau {network} pour post #{post_id} par user #{user_id}")
+            
+            db_post = self.get_post_by_id(post_id)
+            if not db_post:
+                print(f"❌ [RESTORE] Post #{post_id} non trouvé")
+                return None
+
+            print(f"📰 [RESTORE] Post trouvé: {db_post.title}")
+            print(f"🔍 [RESTORE] Validations actuelles: {db_post.network_validations}")
+
+            # Initialiser network_validations si nécessaire
+            if not db_post.network_validations:
+                db_post.network_validations = {}
+                print(f"🆕 [RESTORE] Initialisation des validations pour post #{post_id}")
+
+            # Remettre le réseau en brouillon
+            new_validation = {
+                "status": "draft",
+                "validated_by": user_id,
+                "validated_at": datetime.utcnow().isoformat(),
+                "rejection_reason": None
+            }
+            db_post.network_validations[network] = new_validation
+            print(f"🔄 [RESTORE] Restauration du réseau {network} pour post #{post_id}")
+            print(f"🔍 [RESTORE] Nouvelle validation: {new_validation}")
+
+            # Forcer la mise à jour de l'objet JSON
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(db_post, 'network_validations')
+            
+            print(f"💾 [RESTORE] Sauvegarde en base de données...")
+            self.db.commit()
+            self.db.refresh(db_post)
+            
+            print(f"✅ [RESTORE] Réseau {network} restauré pour post #{post_id}")
+            print(f"🔍 [RESTORE] Validations finales: {db_post.network_validations}")
+            
+            return db_post
+            
+        except Exception as e:
+            print(f"❌ [RESTORE] Erreur restauration réseau {network} pour post #{post_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.db.rollback()
+            return None
+
+    def _add_network_to_publication_queue(self, post: Post, network: str):
+        """
+        Ajouter un réseau spécifique validé à la file d'attente de publication
+        """
+        try:
+            print(f"🚀 [QUEUE] Ajout du réseau {network} à la queue pour post #{post.id}")
+            from app.models.publication_queue import PublicationQueue
+            from datetime import timedelta, timezone
+            
+            # Vérifier si le contenu généré existe pour ce réseau
+            generated_content = post.generated_content if isinstance(post.generated_content, dict) else {}
+            if network not in generated_content:
+                print(f"❌ [QUEUE] Aucun contenu généré pour le réseau {network}")
+                return
+            
+            # Récupérer la configuration du réseau pour le délai
+            from app.models.network_config import NetworkConfig
+            network_config = self.db.query(NetworkConfig).filter(
+                NetworkConfig.network == network,
+                NetworkConfig.is_active == True
+            ).first()
+            
+            if not network_config:
+                print(f"❌ [QUEUE] Configuration réseau {network} non trouvée")
+                return
+            
+            # Calculer l'heure de publication
+            now = datetime.now(timezone.utc)
+            scheduled_at = now + timedelta(minutes=network_config.default_publication_delay)
+            
+            # Récupérer les pages sociales du flux
+            social_pages = post.feed.social_pages or {}
+            page_id = social_pages.get(network)
+            
+            if not page_id:
+                print(f"❌ [QUEUE] Aucune page configurée pour le réseau {network}")
+                return
+            
+            # Vérifier si ce réseau n'est pas déjà en queue
+            existing_queue = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.network == network,
+                PublicationQueue.status.in_(['pending', 'scheduled'])
+            ).first()
+            
+            if existing_queue:
+                print(f"⚠️ [QUEUE] Réseau {network} déjà en queue pour ce feed")
+                return
+            
+            # Créer l'entrée dans la queue
+            queue_entry = PublicationQueue(
+                feed_id=post.feed_id,
+                network=network,
+                target_page_id=page_id,
+                content=generated_content[network],
+                media_urls=[post.source_image] if post.source_image else [],
+                scheduled_at=scheduled_at,
+                status='SCHEDULED'
+            )
+            
+            self.db.add(queue_entry)
+            self.db.commit()
+            
+            print(f"✅ [QUEUE] Réseau {network} ajouté à la queue pour le {scheduled_at}")
+            
+        except Exception as e:
+            print(f"❌ [QUEUE] Erreur ajout réseau {network} à la queue: {e}")
+            import traceback
+            traceback.print_exc()
+            self.db.rollback()
 
     def _add_to_publication_queue(self, post: Post):
         """
@@ -260,7 +550,6 @@ class PostService:
                         continue
                     
                     queue_item = PublicationQueue(
-                        post_id=post.id,
                         feed_id=post.feed_id,
                         network=network,
                         content=generated_content[network],
@@ -383,7 +672,6 @@ class PostService:
                 
                 # 7. Créer l'entrée de queue
                 queue_item = PublicationQueue(
-                    post_id=post.id,
                     feed_id=post.feed_id,
                     network=network,
                     content=generated_content[network],
@@ -476,8 +764,35 @@ class PostService:
             return {"ready": False, "reason": f"Erreur: {str(e)}"}
 
     def get_posts_queue(self) -> List[Post]:
-        """Récupère les posts validés en attente de publication"""
-        return self.db.query(Post).options(joinedload(Post.feed)).filter(Post.status == "validated").order_by(Post.validated_at.asc()).all()
+        """Récupère les posts qui ont des réseaux validés en attente de publication"""
+        from app.models.publication_queue import PublicationQueue
+        
+        # Récupérer les feed_ids qui ont des éléments en queue
+        queue_feed_ids = self.db.query(PublicationQueue.feed_id).filter(
+            PublicationQueue.status.in_(['scheduled', 'pending'])
+        ).distinct().all()
+        
+        feed_ids = [feed_id[0] for feed_id in queue_feed_ids if feed_id[0] is not None]
+        
+        if not feed_ids:
+            return []
+        
+        # Récupérer les posts correspondants
+        posts = self.db.query(Post).options(joinedload(Post.feed)).filter(
+            Post.feed_id.in_(feed_ids)
+        ).order_by(Post.created_at.desc()).all()
+        
+        # Enrichir chaque post avec les informations de queue
+        for post in posts:
+            queue_items = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.status.in_(['scheduled', 'pending'])
+            ).all()
+            
+            # Ajouter les informations de queue au post
+            post.queue_items = queue_items
+        
+        return posts
 
     def mark_post_published(self, post_id: int) -> Optional[Post]:
         db_post = self.get_post_by_id(post_id)
@@ -491,7 +806,6 @@ class PostService:
 
     def create_publication(self, post_id: int, network: str, content: str, published_url: str = None, is_success: bool = True, error_message: str = None) -> Publication:
         db_publication = Publication(
-            post_id=post_id,
             network=network,
             content=content,
             published_url=published_url,
@@ -505,7 +819,7 @@ class PostService:
         return db_publication
 
     def get_publication_history(self, limit: int = 100) -> List[Publication]:
-        return self.db.query(Publication).order_by(Publication.created_at.desc()).limit(limit).all()
+        return self.db.query(Publication).order_by(Publication.published_at.desc()).limit(limit).all()
 
     def reject_post(self, post_id: int, user_id: int) -> Post:
         """Rejeter un post"""

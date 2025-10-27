@@ -18,6 +18,7 @@ class ScheduleConfig(Base):
     
     # Type de jour
     day_type = Column(String(20), nullable=False, index=True)  # weekday, weekend, holiday
+    day_of_week = Column(Integer, nullable=True, index=True)  # 0=Lundi, 6=Dimanche
     
     # Horaires de publication (format 24h)
     start_time = Column(String(5), nullable=False)  # "09:00"
@@ -28,9 +29,6 @@ class ScheduleConfig(Base):
     
     # Note: L'intervalle est géré par le délai global du réseau (NetworkConfig)
     # interval_minutes = Column(Integer, default=30)  # SUPPRIMÉ - duplication avec délai réseau
-    
-    # Maximum de publications par jour dans ce créneau
-    max_posts_per_day = Column(Integer, default=5)
     
     # Jours spécifiques si applicable (JSON array des numéros de jour 0-6)
     # 0=Lundi, 1=Mardi, ..., 6=Dimanche
@@ -49,10 +47,9 @@ class ScheduleConfig(Base):
 
     def is_time_in_range(self, hour: int, minute: int = 0) -> bool:
         """Vérifie si une heure donnée est dans le créneau horaire"""
-        start_hour = self.start_time.hour
-        start_min = self.start_time.minute
-        end_hour = self.end_time.hour
-        end_min = self.end_time.minute
+        # Convertir les strings en heures/minutes
+        start_hour, start_min = map(int, self.start_time.split(':'))
+        end_hour, end_min = map(int, self.end_time.split(':'))
         
         current_minutes = hour * 60 + minute
         start_minutes = start_hour * 60 + start_min
@@ -62,10 +59,9 @@ class ScheduleConfig(Base):
 
     def get_available_minutes_in_range(self, interval_minutes: int = 30) -> list:
         """Retourne toutes les minutes disponibles dans le créneau"""
-        start_hour = self.start_time.hour
-        start_min = self.start_time.minute
-        end_hour = self.end_time.hour
-        end_min = self.end_time.minute
+        # Convertir les strings en heures/minutes
+        start_hour, start_min = map(int, self.start_time.split(':'))
+        end_hour, end_min = map(int, self.end_time.split(':'))
         
         start_minutes = start_hour * 60 + start_min
         end_minutes = end_hour * 60 + end_min
@@ -82,10 +78,10 @@ class ScheduleConfig(Base):
             'id': self.id,
             'network': self.network,
             'day_type': self.day_type,
+            'day_of_week': self.day_of_week,
             'start_time': self.start_time,
             'end_time': self.end_time,
             'is_active': self.is_active,
-            'max_posts_per_day': self.max_posts_per_day,
             'specific_days': self.specific_days,
             'period_start': self.period_start.isoformat() if self.period_start else None,
             'period_end': self.period_end.isoformat() if self.period_end else None,

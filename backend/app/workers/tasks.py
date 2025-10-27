@@ -286,6 +286,154 @@ def manage_post_state_transitions():
 
 
 @celery_app.task
+def check_blotato_publication_status():
+    """
+    Vérifier le statut des publications Blotato pour détecter les échecs
+    """
+    from app.models.publication_queue import PublicationQueue
+    from app.services.blotato_service import BlotatoService
+    from datetime import datetime, timezone, timedelta
+    
+    db = SessionLocal()
+    try:
+        print("🔍 Vérification du statut des publications Blotato...")
+        now = datetime.now(timezone.utc)
+        
+        # Récupérer les posts PUBLISHING depuis plus de 2 minutes
+        publishing_items = db.query(PublicationQueue).filter(
+            PublicationQueue.status == 'PUBLISHING',
+            PublicationQueue.created_at <= now - timedelta(minutes=2)
+        ).all()
+        
+        blotato_service = BlotatoService()
+        
+        for item in publishing_items:
+            try:
+                # Vérifier si on a un postSubmissionId dans extra_data
+                extra_data = item.extra_data or {}
+                post_submission_id = extra_data.get('postSubmissionId')
+                
+                if post_submission_id:
+                    print(f"🔍 Vérification du statut pour post #{item.id} (Submission ID: {post_submission_id})")
+                    
+                    # Vérifier le statut via l'API Blotato
+                    status_result = blotato_service.check_post_status(post_submission_id)
+                    
+                    if status_result['status'] == 'success':
+                        post_data = status_result['data']
+                        
+                        # Vérifier si la publication a échoué
+                        if post_data.get('status') == 'failed' or 'error' in post_data:
+                            print(f"❌ Post #{item.id} échoué côté Blotato: {post_data.get('error', 'Erreur inconnue')}")
+                            item.status = 'FAILED'
+                            item.error_message = f"Échec Blotato: {post_data.get('error', 'Erreur inconnue')}"
+                            
+                        elif post_data.get('status') == 'completed':
+                            print(f"✅ Post #{item.id} publié avec succès")
+                            item.status = 'PUBLISHED'
+                            item.published_at = now
+                            item.publication_url = post_data.get('url')
+                            
+                        elif post_data.get('status') == 'pending':
+                            print(f"⏳ Post #{item.id} toujours en attente")
+                            # Garder le statut PUBLISHING
+                            
+                    else:
+                        print(f"⚠️ Impossible de vérifier le statut pour post #{item.id}: {status_result['message']}")
+                        
+                else:
+                    print(f"⚠️ Pas de postSubmissionId pour post #{item.id}")
+                    
+            except Exception as e:
+                print(f"❌ Erreur lors de la vérification du post #{item.id}: {e}")
+                continue
+        
+        if publishing_items:
+            db.commit()
+            print(f"✅ Statut vérifié pour {len(publishing_items)} posts")
+        
+    except Exception as e:
+        print(f"❌ Erreur lors de la vérification des statuts Blotato: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@celery_app.task
+def check_direct_posts_status():
+    """
+    Vérifier le statut des posts directs dans la table Publication
+    """
+    from app.models.publication import Publication
+    from app.services.blotato_service import BlotatoService
+    from datetime import datetime, timezone, timedelta
+    
+    db = SessionLocal()
+    try:
+        print("🔍 Vérification du statut des posts directs...")
+        now = datetime.now(timezone.utc)
+        
+        # Récupérer les posts directs récents (dernières 2 heures) qui sont marqués comme succès
+        # mais qui pourraient avoir échoué côté Blotato
+        recent_direct_posts = db.query(Publication).filter(
+            Publication.feed_id.is_(None),  # Posts directs
+            Publication.is_success == True,  # Marqués comme succès
+            Publication.published_at >= now - timedelta(hours=2)  # Récents
+        ).all()
+        
+        blotato_service = BlotatoService()
+        
+        for post in recent_direct_posts:
+            try:
+                # Vérifier si on a un postSubmissionId dans extra_data
+                extra_data = post.extra_data or {}
+                post_submission_id = extra_data.get('postSubmissionId')
+                
+                if post_submission_id:
+                    print(f"🔍 Vérification du statut pour post direct #{post.id} (Submission ID: {post_submission_id})")
+                    
+                    # Vérifier le statut via l'API Blotato
+                    status_result = blotato_service.check_post_status(post_submission_id)
+                    
+                    if status_result['status'] == 'success':
+                        post_data = status_result['data']
+                        
+                        # Vérifier si la publication a échoué
+                        if post_data.get('status') == 'failed' or 'error' in post_data:
+                            print(f"❌ Post direct #{post.id} échoué côté Blotato: {post_data.get('error', 'Erreur inconnue')}")
+                            post.is_success = False
+                            post.error_message = f"Échec Blotato: {post_data.get('error', 'Erreur inconnue')}"
+                            
+                        elif post_data.get('status') == 'completed':
+                            print(f"✅ Post direct #{post.id} confirmé publié avec succès")
+                            # Garder is_success = True
+                            
+                        elif post_data.get('status') == 'pending':
+                            print(f"⏳ Post direct #{post.id} toujours en attente")
+                            # Garder is_success = True pour l'instant
+                            
+                    else:
+                        print(f"⚠️ Impossible de vérifier le statut pour post direct #{post.id}: {status_result['message']}")
+                        
+                else:
+                    print(f"⚠️ Pas de postSubmissionId pour post direct #{post.id}")
+                    
+            except Exception as e:
+                print(f"❌ Erreur lors de la vérification du post direct #{post.id}: {e}")
+                continue
+        
+        if recent_direct_posts:
+            db.commit()
+            print(f"✅ Statut vérifié pour {len(recent_direct_posts)} posts directs")
+        
+    except Exception as e:
+        print(f"❌ Erreur lors de la vérification des posts directs: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@celery_app.task
 def recovery_failed_publications():
     """Tâche de rattrapage pour les posts qui n'ont pas été publiés"""
     from app.models.publication_queue import PublicationQueue
@@ -423,23 +571,29 @@ def process_publication_queue():
                 db.commit()
                 
                 # Publier via Blotato en utilisant le destination_id configuré
-                success, message, url = publication_service.publish_to_network(
+                success, message, url, post_submission_id = publication_service.publish_to_network(
                     network=item.network,
                     content=item.content,
                     media_urls=item.media_urls,
-                    target_page_id=item.target_page_id  # Passer la page cible
+                    target_page_id=item.target_page_id,  # Passer la page cible
+                    is_direct_post=False  # Post programmé - utiliser URLs publiques existantes
                 )
                 
                 if success:
                     item.status = 'PUBLISHED'
                     item.published_at = now
                     item.publication_url = url
+                    
+                    # Stocker le postSubmissionId pour vérification ultérieure
+                    if post_submission_id:
+                        extra_data = item.extra_data or {}
+                        extra_data['postSubmissionId'] = post_submission_id
+                        item.extra_data = extra_data
                     print(f"✅ Publication réussie sur {item.network}: {url}")
                     
                     # Enregistrer dans la table publications pour l'historique
                     from app.models.publication import Publication
                     publication = Publication(
-                        post_id=item.post_id,
                         feed_id=item.feed_id,  # Pour filtrage par flux dans l'historique
                         network=item.network,
                         content=item.content,
@@ -457,7 +611,6 @@ def process_publication_queue():
                     # Enregistrer l'échec dans la table publications
                     from app.models.publication import Publication
                     publication = Publication(
-                        post_id=item.post_id,
                         feed_id=item.feed_id,  # Pour filtrage par flux dans l'historique
                         network=item.network,
                         content=item.content,

@@ -114,6 +114,9 @@ const UnifiedPublication = () => {
   const queueItems = queueData?.data || [];
   const directPosts = directPostsData?.data || [];
   
+  // Filtrer les posts directs immédiats de la file d'attente
+  const scheduledQueueItems = queueItems.filter(item => !item.is_immediate);
+  
   // Debug pour voir les données (réduit)
   // console.log('🔍 Queue Items Debug:', queueItems);
 
@@ -272,8 +275,8 @@ const UnifiedPublication = () => {
 
   // Fonction de filtrage des éléments de la file d'attente
   const getFilteredQueueItems = () => {
-    // Combiner les posts de la queue et les posts directs
-    const allItems = [...queueItems, ...directPosts];
+    // Utiliser seulement les posts programmés (exclure les posts directs immédiats)
+    const allItems = [...scheduledQueueItems];
     
     return allItems.filter(item => {
       // Filtre par flux
@@ -352,6 +355,139 @@ const UnifiedPublication = () => {
   };
 
 
+  // Fonction pour rendre les posts directs
+  const renderDirectPostsTab = () => {
+    const immediateDirectPosts = directPosts.filter(post => post.is_immediate);
+    
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Posts directs immédiats</h2>
+            <button 
+              onClick={() => setShowDirectPost(true)}
+              className="px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm sm:text-base"
+            >
+              <FaPlus className="inline mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">Nouveau post direct</span>
+              <span className="sm:hidden">Nouveau</span>
+            </button>
+          </div>
+          
+          {/* Statistiques */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 shadow-sm">
+              <div className="text-3xl font-bold text-green-700 mb-1">
+                {immediateDirectPosts.filter(post => post.status === 'published').length}
+              </div>
+              <div className="text-sm font-medium text-green-600">Publiés</div>
+            </div>
+            <div className="text-center p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200 shadow-sm">
+              <div className="text-3xl font-bold text-red-700 mb-1">
+                {immediateDirectPosts.filter(post => post.status === 'failed').length}
+              </div>
+              <div className="text-sm font-medium text-red-600">Échecs</div>
+            </div>
+            <div className="text-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-gray-200 shadow-sm">
+              <div className="text-3xl font-bold text-gray-700 mb-1">
+                {immediateDirectPosts.filter(post => !post.status || post.status === 'draft').length}
+              </div>
+              <div className="text-sm font-medium text-gray-600">Brouillons</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Liste des posts directs */}
+        {immediateDirectPosts.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-lg shadow">
+            <FaClock className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun post direct</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Créez votre premier post direct pour commencer.
+            </p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contenu</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Réseau</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {immediateDirectPosts.map((post) => (
+                    <tr key={post.id} className="hover:bg-gray-50">
+                      <td className="px-3 sm:px-6 py-4">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-600">PD</span>
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-gray-900">
+                              <span className="hidden sm:inline">{post.title || post.content.substring(0, 100)}...</span>
+                              <span className="sm:hidden">{post.title || post.content.substring(0, 50)}...</span>
+                            </p>
+                            <p className="text-xs text-gray-500">Post direct immédiat</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="mr-2">{getNetworkIcon(post.network)}</span>
+                          <span className="text-sm font-medium text-gray-900 capitalize hidden sm:inline">
+                            {post.network}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          post.status === 'published' ? 'bg-green-100 text-green-800' :
+                          post.status === 'failed' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {post.status === 'published' ? 'Publié' :
+                           post.status === 'failed' ? 'Échec' :
+                           'Brouillon'}
+                        </span>
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {post.published_at ? 
+                          format(new Date(post.published_at), 'dd/MM à HH:mm', { locale: fr }) :
+                          format(new Date(post.created_at), 'dd/MM à HH:mm', { locale: fr })
+                        }
+                      </td>
+                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {post.status === 'published' && post.publication_url && (
+                          <a
+                            href={post.publication_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:text-indigo-900"
+                          >
+                            <FaExternalLinkAlt className="inline mr-1" />
+                            Voir
+                          </a>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderQueueTab = () => (
     <div className="space-y-6">
       {/* Header avec actions */}
@@ -397,36 +533,36 @@ const UnifiedPublication = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
           <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-blue-700 mb-1">
-              {queueItems.filter(item => item.status === 'SCHEDULED' && !item.is_paused).length}
+              {scheduledQueueItems.filter(item => item.status === 'SCHEDULED' && !item.is_paused).length}
             </div>
             <div className="text-sm font-medium text-blue-600">Programmés</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl border-2 border-purple-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-purple-700 mb-1">
-              {queueItems.filter(item => item.status === 'WAITING_HOURS' && !item.is_paused).length}
+              {scheduledQueueItems.filter(item => item.status === 'WAITING_HOURS' && !item.is_paused).length}
             </div>
             <div className="text-sm font-medium text-purple-600">En attente d'horaires</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl border-2 border-yellow-200 shadow-sm hover:shadow-md transition-all duration-200">
             <div className="text-3xl font-bold text-yellow-700 mb-1">
-              {queueItems.filter(item => item.status === 'PENDING' && !item.is_paused).length}
+              {scheduledQueueItems.filter(item => item.status === 'PENDING' && !item.is_paused).length}
           </div>
             <div className="text-sm font-medium text-yellow-600">Prêts à publier</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-200 shadow-sm hover:shadow-md transition-all duration-200">
-            <div className="text-3xl font-bold text-orange-700 mb-1">{queueItems.filter(item => item.is_paused).length}</div>
+            <div className="text-3xl font-bold text-orange-700 mb-1">{scheduledQueueItems.filter(item => item.is_paused).length}</div>
             <div className="text-sm font-medium text-orange-600">En pause</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl border-2 border-indigo-200 shadow-sm hover:shadow-md transition-all duration-200">
-            <div className="text-3xl font-bold text-indigo-700 mb-1">{queueItems.filter(item => item.status === 'PUBLISHING').length}</div>
+            <div className="text-3xl font-bold text-indigo-700 mb-1">{scheduledQueueItems.filter(item => item.status === 'PUBLISHING').length}</div>
             <div className="text-sm font-medium text-indigo-600">En cours</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200 shadow-sm hover:shadow-md transition-all duration-200">
-            <div className="text-3xl font-bold text-green-700 mb-1">{queueItems.filter(item => item.status === 'PUBLISHED').length}</div>
+            <div className="text-3xl font-bold text-green-700 mb-1">{scheduledQueueItems.filter(item => item.status === 'PUBLISHED').length}</div>
             <div className="text-sm font-medium text-green-600">Publiés</div>
           </div>
           <div className="text-center p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-xl border-2 border-red-200 shadow-sm hover:shadow-md transition-all duration-200">
-            <div className="text-3xl font-bold text-red-700 mb-1">{queueItems.filter(item => item.status === 'FAILED').length}</div>
+            <div className="text-3xl font-bold text-red-700 mb-1">{scheduledQueueItems.filter(item => item.status === 'FAILED').length}</div>
             <div className="text-sm font-medium text-red-600">Échecs</div>
           </div>
         </div>
@@ -909,26 +1045,23 @@ const UnifiedPublication = () => {
       try {
         let mediaUrls = [];
         
-        // Si une image a été uploadée, l'uploader d'abord
+        // Si une image a été uploadée, la convertir en base64
         if (directPostData.imageFile) {
-          const formData = new FormData();
-          formData.append('file', directPostData.imageFile);
-          
           try {
-            // Upload de l'image (vous devrez créer cet endpoint)
-            const uploadResponse = await api.post('/upload/image', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data'
-              }
+            // Convertir l'image en base64
+            const base64Image = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(directPostData.imageFile);
             });
             
-            if (uploadResponse.data?.url) {
-              mediaUrls = [uploadResponse.data.url];
-            }
-          } catch (uploadError) {
-            console.error('❌ Erreur upload image:', uploadError);
-            // Continuer sans image si l'upload échoue
-            alert('Impossible d\'uploader l\'image, publication sans image');
+            mediaUrls = [base64Image];
+            console.log('✅ Image convertie en base64:', base64Image.substring(0, 50) + '...');
+          } catch (imageError) {
+            console.error('❌ Erreur conversion image:', imageError);
+            // Continuer sans image si la conversion échoue
+            alert('Impossible de convertir l\'image, publication sans image');
           }
         }
         
@@ -1487,7 +1620,8 @@ const UnifiedPublication = () => {
   );
 
   const tabs = [
-    { id: 'queue', label: 'File d\'attente', icon: FaClock, count: queueItems.length }
+    { id: 'queue', label: 'File d\'attente', icon: FaClock, count: scheduledQueueItems.length },
+    { id: 'direct', label: 'Posts directs', icon: FaPlus, count: directPosts.filter(post => post.is_immediate).length }
   ];
 
   return (
@@ -1561,6 +1695,7 @@ const UnifiedPublication = () => {
         {/* Contenu */}
         <div>
           {activeTab === 'queue' && renderQueueTab()}
+          {activeTab === 'direct' && renderDirectPostsTab()}
         </div>
 
         {/* Modals */}

@@ -14,7 +14,13 @@ class ScheduleService:
 
     def create_schedule_config(self, config: ScheduleConfigCreate) -> ScheduleConfig:
         """Créer une nouvelle configuration d'horaires"""
-        db_config = ScheduleConfig(**config.dict())
+        config_dict = config.dict()
+        
+        # Convertir day_type en day_of_week si nécessaire
+        if config_dict.get('day_type') and config_dict.get('day_of_week') is None:
+            config_dict['day_of_week'] = None  # Toujours global maintenant
+        
+        db_config = ScheduleConfig(**config_dict)
         self.db.add(db_config)
         self.db.commit()
         self.db.refresh(db_config)
@@ -55,24 +61,27 @@ class ScheduleService:
         self.db.commit()
         return True
 
+
     def get_active_config_for_network_now(self, network: str) -> Optional[ScheduleConfig]:
         """Récupérer la configuration active pour un réseau à l'heure actuelle"""
-        now = datetime.now()
-        current_weekday = now.weekday()  # 0=Lundi, 6=Dimanche
+        from datetime import datetime
         
-        # Déterminer le type de jour
+        now = datetime.now()
+        current_weekday = now.weekday()  # 0=lundi, 6=dimanche
+        
+        # Déterminer si c'est un jour de semaine ou week-end
         if current_weekday < 5:  # Lundi à Vendredi
-            day_type = "weekday"
+            day_type = 'weekday'
         else:  # Samedi et Dimanche
-            day_type = "weekend"
-
-        # Chercher la configuration active
+            day_type = 'weekend'
+        
+        # Chercher la configuration pour le type de jour actuel
         config = self.db.query(ScheduleConfig).filter(
             ScheduleConfig.network == network,
             ScheduleConfig.day_type == day_type,
             ScheduleConfig.is_active == True
         ).first()
-
+        
         return config
 
     def is_publication_allowed_now(self, network: str) -> Dict[str, any]:
@@ -113,19 +122,20 @@ class ScheduleService:
 
     def _calculate_next_available_time(self, config: ScheduleConfig) -> str:
         """Calculer la prochaine heure de publication disponible"""
+        if not config:
+            return "Maintenant"  # Si pas de config, permettre immédiatement
+            
         now = datetime.now()
         
         # Si on est avant l'heure de début aujourd'hui
-        start_hour = config.start_time.hour
-        start_min = config.start_time.minute
+        start_hour, start_min = map(int, config.start_time.split(':'))
         today_start = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
         
         if now < today_start:
             return today_start.strftime("%H:%M")
 
         # Si on est après l'heure de fin aujourd'hui, chercher demain
-        end_hour = config.end_time.hour
-        end_min = config.end_time.minute
+        end_hour, end_min = map(int, config.end_time.split(':'))
         today_end = now.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
         
         if now > today_end:
@@ -146,6 +156,11 @@ class ScheduleService:
         for config_data in configs_data:
             # Convertir l'objet Pydantic en dictionnaire
             config_dict = config_data.dict() if hasattr(config_data, 'dict') else config_data
+            
+            # Convertir day_type en day_of_week si nécessaire
+            if config_dict.get('day_type') and config_dict.get('day_of_week') is None:
+                config_dict['day_of_week'] = None  # Toujours None maintenant
+            
             new_config = ScheduleConfig(**config_dict)
             self.db.add(new_config)
             new_configs.append(new_config)
@@ -253,10 +268,8 @@ class ScheduleService:
             return target_time
         
         # L'heure n'est pas autorisée, chercher le prochain créneau
-        start_hour = config.start_time.hour
-        start_min = config.start_time.minute
-        end_hour = config.end_time.hour
-        end_min = config.end_time.minute
+        start_hour, start_min = map(int, config.start_time.split(':'))
+        end_hour, end_min = map(int, config.end_time.split(':'))
         
         now = datetime.now()
         
@@ -277,6 +290,70 @@ class ScheduleService:
         # Programmer pour demain à l'heure d'ouverture
         tomorrow = now + timedelta(days=1)
         return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+
+    def calculate_optimal_schedule_time(self, network: str, base_time: datetime = None, delay_minutes: int = None) -> Dict:
+        """
+        Calcule l'heure optimale de publication en tenant compte des horaires d'ouverture et des délais
+        
+        Args:
+            network: Réseau social (facebook, linkedin, x)
+            base_time: Heure de base pour le calcul (par défaut maintenant)
+            delay_minutes: Délai en minutes (par défaut depuis NetworkConfig)
+            
+        Returns:
+            Dict avec l'heure optimale et les détails du calcul
+        """
+        from app.models.network_config import NetworkConfig
+        
+        if base_time is None:
+            base_time = datetime.now()
+        
+        # Récupérer le délai depuis NetworkConfig si non fourni
+        if delay_minutes is None:
+            network_config = self.db.query(NetworkConfig).filter(
+                NetworkConfig.network == network,
+                NetworkConfig.is_active == True
+            ).first()
+            delay_minutes = network_config.default_publication_delay if network_config else 30
+        
+        # Récupérer la configuration d'horaires active
+        schedule_config = self.get_active_config_for_network_now(network)
+        
+        if not schedule_config:
+            # Pas de config horaire, programmer immédiatement avec délai
+            optimal_time = base_time + timedelta(minutes=delay_minutes)
+            return {
+                "optimal_time": optimal_time,
+                "reason": "Aucune configuration horaire - délai appliqué",
+                "delay_minutes": delay_minutes,
+                "schedule_config": None,
+                "adjusted": False
+            }
+        
+        # Calculer l'heure cible avec délai
+        target_time = base_time + timedelta(minutes=delay_minutes)
+        
+        # Vérifier si l'heure cible est dans les horaires d'ouverture
+        if schedule_config.is_time_in_range(target_time.hour, target_time.minute):
+            return {
+                "optimal_time": target_time,
+                "reason": f"Heure cible dans les horaires d'ouverture ({schedule_config.start_time}-{schedule_config.end_time})",
+                "delay_minutes": delay_minutes,
+                "schedule_config": schedule_config.to_dict(),
+                "adjusted": False
+            }
+        
+        # L'heure cible n'est pas dans les horaires, ajuster
+        adjusted_time = self._adjust_time_to_schedule(network, target_time)
+        
+        return {
+            "optimal_time": adjusted_time,
+            "reason": f"Heure ajustée aux horaires d'ouverture ({schedule_config.start_time}-{schedule_config.end_time})",
+            "delay_minutes": delay_minutes,
+            "schedule_config": schedule_config.to_dict(),
+            "adjusted": True,
+            "original_time": target_time
+        }
 
     def get_publication_schedule_for_network(self, network: str, network_delay_minutes: int = 60) -> List[Dict]:
         """Générer un planning de publication pour un réseau"""
@@ -370,3 +447,66 @@ class ScheduleService:
                 print(f"✅ Configuration créée: {config_data['network']} - {config_data['day_type']}")
 
         self.db.commit()
+
+    def recalculate_queue_for_network(self, network: str) -> int:
+        """Recalculer les horaires des posts en attente pour un réseau"""
+        from app.models.publication_queue import PublicationQueue
+        from datetime import datetime, timezone
+        
+        # Récupérer tous les posts en attente pour ce réseau
+        pending_posts = self.db.query(PublicationQueue).filter(
+            PublicationQueue.network == network,
+            PublicationQueue.status.in_(['SCHEDULED', 'PENDING'])
+        ).all()
+        
+        updated_count = 0
+        
+        for post in pending_posts:
+            try:
+                # Recalculer le scheduled_at avec la nouvelle configuration
+                new_scheduled_at = self._calculate_next_available_datetime(network)
+                
+                if new_scheduled_at and new_scheduled_at != post.scheduled_at:
+                    post.scheduled_at = new_scheduled_at
+                    updated_count += 1
+                    print(f"🔄 Post {post.id} recalculé: {post.scheduled_at}")
+                
+            except Exception as e:
+                print(f"❌ Erreur lors du recalcul du post {post.id}: {e}")
+                continue
+        
+        if updated_count > 0:
+            self.db.commit()
+            print(f"✅ {updated_count} posts recalculés pour {network}")
+        
+        return updated_count
+
+    def _calculate_next_available_datetime(self, network: str) -> datetime:
+        """Calculer le prochain créneau disponible comme datetime"""
+        from datetime import datetime, timezone, timedelta
+        
+        # Récupérer la configuration active
+        config = self.get_active_config_for_network_now(network)
+        
+        if not config:
+            # Si pas de config, programmer dans 1 heure
+            return datetime.now(timezone.utc) + timedelta(hours=1)
+        
+        # Parser les horaires
+        start_hour, start_min = map(int, config.start_time.split(':'))
+        end_hour, end_min = map(int, config.end_time.split(':'))
+        
+        now = datetime.now(timezone.utc)
+        
+        # Si on est dans les horaires, programmer maintenant
+        current_hour = now.hour
+        current_min = now.minute
+        
+        if (start_hour < current_hour < end_hour) or \
+           (current_hour == start_hour and current_min >= start_min) or \
+           (current_hour == end_hour and current_min <= end_min):
+            return now
+        
+        # Sinon, programmer au début des horaires du jour suivant
+        tomorrow = now + timedelta(days=1)
+        return tomorrow.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)

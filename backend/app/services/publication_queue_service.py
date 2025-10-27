@@ -44,14 +44,38 @@ class PublicationQueueService:
             generated_content = post.generated_content or {}
             content = generated_content.get(network, post.content)
             
-            # Calculer le délai de publication
+            # Calculer le délai de publication avec vérification des horaires
             publication_timing = feed.publication_timing or {}
             delay_minutes = publication_timing.get(network, 30)
-            scheduled_at = datetime.now() + timedelta(minutes=delay_minutes)
+            
+            # Utiliser le service de planification pour calculer l'heure optimale
+            from app.services.schedule_service import ScheduleService
+            schedule_service = ScheduleService(self.db)
+            schedule_result = schedule_service.calculate_optimal_schedule_time(
+                network=network,
+                base_time=datetime.now(),
+                delay_minutes=delay_minutes
+            )
+            
+            scheduled_at = schedule_result["optimal_time"]
+            
+            print(f"📅 Post #{post_id} programmé pour {network}:")
+            print(f"   Heure optimale: {scheduled_at.strftime('%d/%m/%Y %H:%M')}")
+            print(f"   Raison: {schedule_result['reason']}")
+            print(f"   Délai appliqué: {schedule_result['delay_minutes']} minutes")
+            if schedule_result.get('adjusted'):
+                print(f"   Heure originale: {schedule_result['original_time'].strftime('%d/%m/%Y %H:%M')}")
             
             # Récupérer la page de destination
             social_pages = feed.social_pages or {}
             target_page_id = social_pages.get(network)
+            
+            # Déterminer le statut selon l'heure calculée
+            now = datetime.now()
+            if scheduled_at <= now + timedelta(minutes=5):  # Dans les 5 prochaines minutes
+                status = "PENDING"
+            else:
+                status = "SCHEDULED"
             
             # Créer l'élément de la file d'attente
             queue_item = PublicationQueue(
@@ -62,7 +86,7 @@ class PublicationQueueService:
                 content=content,
                 media_urls=[post.source_image] if post.source_image else None,
                 scheduled_at=scheduled_at,
-                status="PENDING"
+                status=status
             )
             
             self.db.add(queue_item)

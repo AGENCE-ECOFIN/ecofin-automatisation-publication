@@ -12,7 +12,6 @@ import {
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const USE_MOCK_DATA = false; // Désactivé pour utiliser l'API réelle
 
-console.log('🔧 API Configuration:', { API_URL, USE_MOCK_DATA });
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -212,10 +211,8 @@ export const postsService = {
             }
             return { data: mockDrafts };
           }
-          console.log('🔧 Fetching real drafts from API...');
           try {
             const response = await api.get('/posts/drafts');
-            console.log('✅ Drafts API response:', response.data?.length || 0, 'posts');
             return response;
           } catch (error) {
             console.error('❌ Drafts API error:', error);
@@ -231,11 +228,9 @@ export const postsService = {
       }
       return { data: mockQueue };
     }
-    console.log('🔧 Fetching real validated from API...');
-    try {
-      const response = await api.get('/posts/validated');
-      console.log('✅ Validated API response:', response.data?.length || 0, 'posts');
-      return response;
+          try {
+            const response = await api.get('/posts/validated');
+            return response;
     } catch (error) {
       console.error('❌ Validated API error:', error);
       throw error;
@@ -252,8 +247,8 @@ export const postsService = {
     }
     console.log('🔧 Fetching real queue from API...');
     try {
-      const response = await api.get('/posts/queue');
-      console.log('✅ Queue API response:', response.data?.length || 0, 'posts');
+      const response = await api.get('/publication-queue/');
+      console.log('✅ Queue API response:', response.data?.length || 0, 'items');
       return response;
     } catch (error) {
       console.error('❌ Queue API error:', error);
@@ -376,11 +371,9 @@ export const postsService = {
              }
              return { data: [] };
            }
-           console.log('🔧 Fetching real rejected from API...');
-           try {
-             const response = await api.get('/posts/rejected');
-             console.log('✅ Rejected API response:', response.data?.length || 0, 'posts');
-             return response;
+          try {
+            const response = await api.get('/posts/rejected');
+            return response;
            } catch (error) {
              console.error('❌ Rejected API error:', error);
              throw error;
@@ -415,16 +408,73 @@ export const postsService = {
              }
              return { data: [] };
            }
-           console.log('🔧 Fetching real direct posts from API...');
-           try {
-             const response = await api.get('/posts/direct');
-             console.log('✅ Direct posts API response:', response.data?.length || 0, 'posts');
-             return response;
+          try {
+            const response = await api.get('/posts/direct');
+            return response;
            } catch (error) {
              console.error('❌ Direct posts API error:', error);
              throw error;
            }
          },
+         getDirectPosts: async () => {
+           if (USE_MOCK_DATA) {
+             console.log('🔧 Using mock data for direct posts (immediate)');
+             await delay(500);
+             if (shouldSimulateError()) {
+               throw new Error('Erreur de récupération des posts directs immédiats simulée');
+             }
+             return { data: [] };
+           }
+          try {
+            const response = await api.get('/posts/direct');
+            return response;
+           } catch (error) {
+             console.error('❌ Direct posts (immediate) API error:', error);
+             throw error;
+           }
+         },
+
+  // Nouvelles méthodes pour la validation granulaire
+  validateNetwork: async (postId, network) => {
+    console.log('🔧 Validating network:', { postId, network });
+    try {
+      const response = await api.post(`/posts/${postId}/networks/${network}/validate`);
+      console.log('✅ Network validated:', response.data);
+      return response;
+    } catch (error) {
+      console.error('❌ Validate network error:', error);
+      throw error;
+    }
+  },
+
+  rejectNetwork: async (postId, network, rejectionReason) => {
+    console.log('🔧 Rejecting network:', { postId, network, rejectionReason });
+    try {
+      const response = await api.post(`/posts/${postId}/networks/${network}/reject`, {
+        network,
+        action: 'reject',
+        rejection_reason: rejectionReason
+      });
+      console.log('✅ Network rejected:', response.data);
+      return response;
+    } catch (error) {
+      console.error('❌ Reject network error:', error);
+      throw error;
+    }
+  },
+
+  restoreNetwork: async (postId, network) => {
+    console.log('🔧 Restoring network:', { postId, network });
+    try {
+      // Utiliser l'endpoint spécifique de restauration
+      const response = await api.post(`/posts/${postId}/networks/${network}/restore`);
+      console.log('✅ Network restored:', response.data);
+      return response;
+    } catch (error) {
+      console.error('❌ Restore network error:', error);
+      throw error;
+    }
+  },
 };
 
 export const usersService = {
@@ -597,10 +647,8 @@ export const tasksService = {
 // Services pour les réseaux
 export const networksService = {
   getNetworks: async () => {
-    console.log('🔧 Getting networks...');
     try {
       const response = await api.get('/networks/');
-      console.log('✅ Networks retrieved:', response.data);
       return response;
     } catch (error) {
       console.error('❌ Get networks error:', error);
@@ -648,7 +696,6 @@ export const networksService = {
 // Services pour la file d'attente de publication
 export const publicationQueueService = {
   getQueue: async (filters = {}) => {
-    console.log('🔧 Getting publication queue:', filters);
     try {
       const params = new URLSearchParams();
       if (filters.status) params.append('status', filters.status);
@@ -656,7 +703,6 @@ export const publicationQueueService = {
       if (filters.feed_id) params.append('feed_id', filters.feed_id);
       
       const response = await api.get(`/publication-queue/?${params.toString()}`);
-      console.log('✅ Publication queue retrieved:', response.data);
       return response;
     } catch (error) {
       console.error('❌ Get publication queue error:', error);

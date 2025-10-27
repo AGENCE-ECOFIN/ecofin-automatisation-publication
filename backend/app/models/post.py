@@ -13,6 +13,7 @@ class Post(Base):
     source_url = Column(String, nullable=True)
     source_image = Column(String, nullable=True)
     generated_content = Column(JSON, nullable=True)  # {facebook, linkedin, x}
+    network_validations = Column(JSON, nullable=True)  # {facebook: {status, validated_by, validated_at}, ...}
     status = Column(String, default="draft")  # draft, validated, published, rejected
     feed_id = Column(Integer, ForeignKey("feeds.id"))
     validated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -23,8 +24,6 @@ class Post(Base):
     # Relations
     feed = relationship("Feed", back_populates="posts")
     validator = relationship("User", foreign_keys=[validated_by])
-    publications = relationship("Publication", back_populates="post")
-    publication_queue = relationship("PublicationQueue", back_populates="post")
     
     # Contrainte unique pour éviter les doublons
     __table_args__ = (

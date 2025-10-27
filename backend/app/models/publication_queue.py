@@ -8,7 +8,6 @@ class PublicationQueue(Base):
     __tablename__ = "publication_queue"
 
     id = Column(Integer, primary_key=True, index=True)
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)  # NULL pour posts directs
     feed_id = Column(Integer, ForeignKey("feeds.id"), nullable=True)  # NULL pour posts directs
     network = Column(String, nullable=False)  # facebook, linkedin, x
     target_page_id = Column(String, nullable=True)  # ID de la page de destination
@@ -36,5 +35,4 @@ class PublicationQueue(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relations
-    post = relationship("Post", back_populates="publication_queue")
     feed = relationship("Feed")

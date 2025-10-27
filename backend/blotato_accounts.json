@@ -86,8 +86,40 @@
     {
       "accountId": "8067",
       "accountName": "@agenceecofin",
-      "platform": "x",
-      "pages": []
+      "platform": "x"
+    },
+    {
+      "accountId": "8620",
+      "accountName": "@WeAreTechAfrica",
+      "platform": "x"
+    },
+    {
+      "accountId": "8622",
+      "accountName": "@InvestCameroun",
+      "platform": "x"
+    },
+
+    {
+      "accountId": "8623",
+      "accountName": "@TogoFirst",
+      "platform": "x"
+    },
+
+    {
+      "accountId": "8624",
+      "accountName": "@StopBlaBlaCam",
+      "platform": "x"
+    },
+
+    {
+      "accountId": "8625",
+      "accountName": "@ecofinagency",
+      "platform": "x"
+    },
+    {
+      "accountId": "8626",
+      "accountName": "@Bankable_RDC",
+      "platform": "x"
     }
   ],
   "last_updated": "2025-10-21T21:50:00Z"
