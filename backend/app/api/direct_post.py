@@ -45,8 +45,9 @@ async def _publish_immediately(post_data: DirectPostRequest, db: Session, user_i
                 published_url=publication_url,
                 is_success=True,
                 published_at=datetime.now(timezone.utc),
-                media_urls=processed_media_urls or [],
-                extra_data={'postSubmissionId': post_submission_id} if post_submission_id else None
+                media_urls=processed_media_urls or []
+                # extra_data sera ajouté après la migration
+                # extra_data={'postSubmissionId': post_submission_id} if post_submission_id else None
             )
             db.add(publication)
             db.commit()

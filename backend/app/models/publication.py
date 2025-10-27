@@ -17,7 +17,8 @@ class Publication(Base):
     published_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     media_urls = Column(JSON, nullable=True)  # URLs des images MinIO
-    extra_data = Column(JSON, nullable=True)  # Données supplémentaires (postSubmissionId, etc.)
+    # extra_data sera ajouté par migration - temporairement commenté
+    # extra_data = Column(JSON, nullable=True)  # Données supplémentaires (postSubmissionId, etc.)
 
     # Relations
     feed = relationship("Feed")
