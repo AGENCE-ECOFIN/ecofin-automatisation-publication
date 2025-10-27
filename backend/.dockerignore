@@ -55,9 +55,6 @@ Thumbs.db
 *.md
 docs/
 
-# Alembic (migrations déjà appliquées)
-alembic.ini
-
 # Scripts de test
 test_*.py
 get_*.py
