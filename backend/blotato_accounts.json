@@ -39,13 +39,17 @@
   ],
   "facebook": [
     {
-      "accountId": "11315",
-      "accountName": "Thierry Hema",
+      "accountId": "12413",
+      "accountName": "Jérémie Flaux",
       "platform": "facebook",
       "pages": [
         {
           "pageId": "722025697671791",
           "pageName": "Testecofin"
+        },
+        {
+          "pageId": "1129445490476594",
+          "pageName": "La Tribune Afrique"
         },
         {
           "pageId": "1982525425350969",
@@ -54,6 +58,10 @@
         {
           "pageId": "699228396610721",
           "pageName": "Business in Cameroon"
+        },
+        {
+          "pageId": "463394467066756",
+          "pageName": "Investir au Cameroun"
         },
         {
           "pageId": "422596914561484",
@@ -74,6 +82,14 @@
         {
           "pageId": "159362754122831",
           "pageName": "AgenceEcofin"
+        },
+
+        {
+          "pageId": "101435355782688",
+          "pageName": "We Are Tech Africa"
+        },       {
+          "pageId": "104033131329008",
+          "pageName": "TogoFirst International"
         },
         {
           "pageId": "100382081966656",
@@ -119,6 +135,11 @@
     {
       "accountId": "8626",
       "accountName": "@Bankable_RDC",
+      "platform": "x"
+    },
+    {
+      "accountId": "8763",
+      "accountName": "@LTAfrique",
       "platform": "x"
     }
   ],
