@@ -397,9 +397,30 @@ class PostService:
                 print(f"❌ [QUEUE] Configuration réseau {network} non trouvée")
                 return
             
-            # Calculer l'heure de publication
+            # Calculer l'heure de publication avec délais cumulés par feed et réseau
             now = datetime.now(timezone.utc)
-            scheduled_at = now + timedelta(minutes=network_config.default_publication_delay)
+            delay_minutes = network_config.default_publication_delay
+            
+            # 🔥 DÉLAI PAR FEED ET RÉSEAU : Vérifier le dernier post du même feed sur le même réseau
+            last_scheduled = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.network == network,
+                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+            ).order_by(PublicationQueue.scheduled_at.desc()).first()
+            
+            if last_scheduled and last_scheduled.scheduled_at:
+                # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
+                scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                print(f"🔄 DÉLAI FEED+RÉSEAU: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
+            else:
+                # Pas de post en attente pour ce feed, programmer normalement avec ajustement horaire
+                base_time = now + timedelta(minutes=delay_minutes)
+                from app.services.schedule_service import ScheduleService
+                schedule_service = ScheduleService(self.db)
+                scheduled_at = schedule_service._adjust_time_to_schedule(network, base_time)
+                print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
+                print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_at.strftime('%H:%M')}")
             
             # Récupérer les pages sociales du flux
             social_pages = post.feed.social_pages or {}
