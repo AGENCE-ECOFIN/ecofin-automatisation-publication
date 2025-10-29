@@ -98,23 +98,27 @@ class FeedService:
             from app.models.publication_queue import PublicationQueue
             from app.models.publication import Publication
             
-            # 1. Supprimer tous les posts associés (draft, validated, rejected)
-            posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
-            if posts_count > 0:
-                self.db.query(Post).filter(Post.feed_id == feed_id).delete()
-                print(f"🗑️ Supprimé {posts_count} post(s) associé(s) au flux #{feed_id}")
+            # 1. Supprimer toutes les publications associées (EN PREMIER car référencées)
+            publications_count = self.db.query(Publication).filter(Publication.feed_id == feed_id).count()
+            if publications_count > 0:
+                # Utiliser synchronize_session=False pour forcer la suppression SQL
+                self.db.query(Publication).filter(Publication.feed_id == feed_id).delete(synchronize_session=False)
+                print(f"🗑️ Supprimé {publications_count} publication(s) associée(s) au flux #{feed_id}")
             
             # 2. Supprimer tous les éléments de la file d'attente associés
             queue_count = self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).count()
             if queue_count > 0:
-                self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).delete()
+                self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).delete(synchronize_session=False)
                 print(f"🗑️ Supprimé {queue_count} élément(s) de la file d'attente associé(s) au flux #{feed_id}")
             
-            # 3. Supprimer toutes les publications associées
-            publications_count = self.db.query(Publication).filter(Publication.feed_id == feed_id).count()
-            if publications_count > 0:
-                self.db.query(Publication).filter(Publication.feed_id == feed_id).delete()
-                print(f"🗑️ Supprimé {publications_count} publication(s) associée(s) au flux #{feed_id}")
+            # 3. Supprimer tous les posts associés (draft, validated, rejected)
+            posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
+            if posts_count > 0:
+                self.db.query(Post).filter(Post.feed_id == feed_id).delete(synchronize_session=False)
+                print(f"🗑️ Supprimé {posts_count} post(s) associé(s) au flux #{feed_id}")
+            
+            # Commit intermédiaire pour s'assurer que tout est supprimé
+            self.db.flush()
             
             # 4. Supprimer le flux lui-même
             self.db.delete(db_feed)
