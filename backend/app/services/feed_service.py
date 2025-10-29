@@ -274,12 +274,15 @@ class FeedService:
                 print(f"🔍 DEBUG La Tribune: enclosure[{i}] = {enclosure}, type = {type(enclosure)}")
                 # feedparser peut stocker l'enclosure comme dict ou objet
                 if isinstance(enclosure, dict):
-                    print(f"🔍 DEBUG La Tribune: dict keys = {enclosure.keys()}")
+                    print(f"🔍 DEBUG La Tribune: dict keys = {list(enclosure.keys())}")
+                    print(f"🔍 DEBUG La Tribune: dict values = {enclosure}")
                     enclosure_type = enclosure.get('type', '')
                     print(f"🔍 DEBUG La Tribune: type = {enclosure_type}")
-                    if enclosure_type and enclosure_type.startswith('image/'):
+                    # Vérifier si c'est une image (ou si le type n'est pas spécifié mais qu'il y a une URL)
+                    if (enclosure_type and enclosure_type.startswith('image/')) or not enclosure_type:
                         # feedparser peut stocker l'URL dans 'href', 'url', ou 'link'
-                        image_url = enclosure.get('href') or enclosure.get('url') or enclosure.get('link')
+                        # Essayer dans cet ordre: url (RSS 2.0 standard), href (feedparser normalisé), link
+                        image_url = enclosure.get('url') or enclosure.get('href') or enclosure.get('link')
                         print(f"🔍 DEBUG La Tribune: image_url = {image_url}")
                         if image_url:
                             print(f"🖼️ Image trouvée via enclosure (dict): {image_url}")
@@ -291,8 +294,10 @@ class FeedService:
                         print(f"🔍 DEBUG La Tribune: objet attributes = {attrs}")
                         enclosure_type = getattr(enclosure, 'type', None)
                         print(f"🔍 DEBUG La Tribune: type = {enclosure_type}")
-                        if enclosure_type and str(enclosure_type).startswith('image/'):
-                            image_url = getattr(enclosure, 'href', None) or getattr(enclosure, 'url', None) or getattr(enclosure, 'link', None)
+                        # Vérifier si c'est une image (ou si le type n'est pas spécifié mais qu'il y a une URL)
+                        if (enclosure_type and str(enclosure_type).startswith('image/')) or not enclosure_type:
+                            # Essayer dans cet ordre: url (RSS 2.0 standard), href (feedparser normalisé), link
+                            image_url = getattr(enclosure, 'url', None) or getattr(enclosure, 'href', None) or getattr(enclosure, 'link', None)
                             print(f"🔍 DEBUG La Tribune: image_url = {image_url}")
                             if image_url:
                                 print(f"🖼️ Image trouvée via enclosure (objet): {image_url}")
@@ -364,6 +369,8 @@ class FeedService:
                 if matches:
                     return matches[0]
         
+        # Aucune image trouvée
+        print(f"⚠️ Aucune image trouvée pour l'article: {entry.get('title', 'N/A')[:50]}...")
         return None
 
     def generate_posts_for_article(self, feed: Feed, article: dict, target_networks: List[str] = None) -> dict:
