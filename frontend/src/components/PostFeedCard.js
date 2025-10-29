@@ -20,11 +20,11 @@ const PostFeedCard = ({ post, onView, onValidate, onReject, onEdit, onSave, onCa
     return imgMatch ? imgMatch[1] : null;
   };
 
-  // Pour les posts directs, utiliser source_image (depuis MinIO)
-  // Pour les posts de flux, chercher dans le contenu de base
-  const articleImage = post.is_direct 
-    ? post.source_image  // Image depuis MinIO via le backend
-    : getArticleImage(post.content);
+  // Priorité: source_image (stocké par le backend) > image dans le contenu HTML
+  // source_image est disponible pour tous les posts (flux ou directs)
+  const articleImage = post.source_image 
+    ? post.source_image  // Image stockée par le backend (depuis RSS feed ou MinIO)
+    : getArticleImage(post.content);  // Fallback: chercher dans le HTML du contenu
 
   return (
     <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden mb-6">
