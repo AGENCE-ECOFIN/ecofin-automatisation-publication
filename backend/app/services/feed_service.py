@@ -269,21 +269,31 @@ class FeedService:
         
         # Vérifier les enclosures (comme dans les flux La Tribune)
         if hasattr(entry, 'enclosures') and entry.enclosures:
-            for enclosure in entry.enclosures:
+            print(f"🔍 DEBUG La Tribune: enclosures trouvés: {len(entry.enclosures)}")
+            for i, enclosure in enumerate(entry.enclosures):
+                print(f"🔍 DEBUG La Tribune: enclosure[{i}] = {enclosure}, type = {type(enclosure)}")
                 # feedparser peut stocker l'enclosure comme dict ou objet
                 if isinstance(enclosure, dict):
+                    print(f"🔍 DEBUG La Tribune: dict keys = {enclosure.keys()}")
                     enclosure_type = enclosure.get('type', '')
+                    print(f"🔍 DEBUG La Tribune: type = {enclosure_type}")
                     if enclosure_type and enclosure_type.startswith('image/'):
                         # feedparser peut stocker l'URL dans 'href', 'url', ou 'link'
                         image_url = enclosure.get('href') or enclosure.get('url') or enclosure.get('link')
+                        print(f"🔍 DEBUG La Tribune: image_url = {image_url}")
                         if image_url:
                             print(f"🖼️ Image trouvée via enclosure (dict): {image_url}")
                             return image_url
                 else:
                     # Si c'est un objet, essayer d'accéder aux attributs directement
                     try:
-                        if hasattr(enclosure, 'type') and str(enclosure.type).startswith('image/'):
+                        attrs = [a for a in dir(enclosure) if not a.startswith('_')]
+                        print(f"🔍 DEBUG La Tribune: objet attributes = {attrs}")
+                        enclosure_type = getattr(enclosure, 'type', None)
+                        print(f"🔍 DEBUG La Tribune: type = {enclosure_type}")
+                        if enclosure_type and str(enclosure_type).startswith('image/'):
                             image_url = getattr(enclosure, 'href', None) or getattr(enclosure, 'url', None) or getattr(enclosure, 'link', None)
+                            print(f"🔍 DEBUG La Tribune: image_url = {image_url}")
                             if image_url:
                                 print(f"🖼️ Image trouvée via enclosure (objet): {image_url}")
                                 return image_url
@@ -291,11 +301,18 @@ class FeedService:
                         print(f"⚠️ Erreur lors de l'extraction d'enclosure (objet): {e}")
                         continue
         
-        # Rechercher dans les liens
-        if hasattr(entry, 'links'):
-            for link in entry.links:
-                if link.get('type', '').startswith('image/'):
-                    return link.get('href')
+        # Rechercher dans les liens (feedparser peut aussi stocker les enclosures ici)
+        if hasattr(entry, 'links') and entry.links:
+            print(f"🔍 DEBUG La Tribune: links trouvés: {len(entry.links)}")
+            for i, link in enumerate(entry.links):
+                print(f"🔍 DEBUG La Tribune: link[{i}] = {link}")
+                link_type = link.get('type', '') if isinstance(link, dict) else getattr(link, 'type', '')
+                if link_type and link_type.startswith('image/'):
+                    image_url = link.get('href') or link.get('url') if isinstance(link, dict) else getattr(link, 'href', None) or getattr(link, 'url', None)
+                    print(f"🔍 DEBUG La Tribune: image_url dans links = {image_url}")
+                    if image_url:
+                        print(f"🖼️ Image trouvée via links: {image_url}")
+                        return image_url
         
         # Rechercher dans le contenu HTML pour des images avec BeautifulSoup
         if hasattr(entry, 'summary') and entry.summary:
