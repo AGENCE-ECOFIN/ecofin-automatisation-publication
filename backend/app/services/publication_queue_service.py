@@ -52,28 +52,72 @@ class PublicationQueueService:
             ).first()
             delay_minutes = network_config.default_publication_delay if network_config else 30
             
-            # 🔥 DÉLAI PAR FEED ET RÉSEAU : Vérifier le dernier post du même feed sur le même réseau
-            last_scheduled = self.db.query(PublicationQueue).filter(
-                PublicationQueue.feed_id == post.feed_id,
-                PublicationQueue.network == network,
-                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
-            ).order_by(PublicationQueue.scheduled_at.desc()).first()
-            
             now = datetime.now(timezone.utc)
+            from app.services.schedule_service import ScheduleService
+            schedule_service = ScheduleService(self.db)
             
-            if last_scheduled and last_scheduled.scheduled_at:
-                # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
-                scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                print(f"🔄 DÉLAI FEED+RÉSEAU: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
+            # 🔥 ÉTAPE 1: Vérifier la dernière publication PUBLISHED pour ce feed/réseau
+            from app.models.publication import Publication
+            last_published = self.db.query(Publication).filter(
+                Publication.feed_id == post.feed_id,
+                Publication.network == network,
+                Publication.is_success == True,
+                Publication.published_at.isnot(None)
+            ).order_by(Publication.published_at.desc()).first()
+            
+            if last_published and last_published.published_at:
+                # Vérifier si le délai depuis la dernière publication est dépassé
+                time_since_last = now - last_published.published_at
+                delay_timedelta = timedelta(minutes=delay_minutes)
+                
+                if time_since_last >= delay_timedelta:
+                    # Le délai est dépassé → publier immédiatement (ou au prochain créneau autorisé)
+                    scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                    print(f"⚡ DÉLAI DÉPASSÉ: Dernière publication du feed #{post.feed_id} sur {network} à {last_published.published_at.strftime('%H:%M')}")
+                    print(f"   → Délai écoulé: {time_since_last} (délai requis: {delay_minutes}min)")
+                    print(f"   → Publication immédiate: {scheduled_at.strftime('%H:%M')}")
+                else:
+                    # Le délai n'est pas encore écoulé → vérifier la file d'attente
+                    remaining_delay = delay_timedelta - time_since_last
+                    print(f"⏳ DÉLAI EN COURS: Dernière publication à {last_published.published_at.strftime('%H:%M')}, reste {remaining_delay}")
+                    
+                    # Vérifier le dernier post en file d'attente
+                    last_scheduled = self.db.query(PublicationQueue).filter(
+                        PublicationQueue.feed_id == post.feed_id,
+                        PublicationQueue.network == network,
+                        PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+                    ).order_by(PublicationQueue.scheduled_at.desc()).first()
+                    
+                    if last_scheduled and last_scheduled.scheduled_at:
+                        # Programmer APRÈS le dernier post en file + délai
+                        scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                        print(f"   🔄 DÉLAI CUMULATIF: Après post #{last_scheduled.id} à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                        print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
+                    else:
+                        # Pas de file d'attente, mais délai encore actif → calculer depuis dernière publication
+                        scheduled_at = last_published.published_at + timedelta(minutes=delay_minutes)
+                        # Ajuster aux horaires si nécessaire
+                        scheduled_at = schedule_service._adjust_time_to_schedule(network, scheduled_at)
+                        print(f"   ⏱️ DÉLAI RESIDUEL: Programmé après la dernière publication")
+                        print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')}")
             else:
-                # Pas de post en attente pour ce feed, programmer normalement avec ajustement horaire
-                base_time = now + timedelta(minutes=delay_minutes)
-                from app.services.schedule_service import ScheduleService
-                schedule_service = ScheduleService(self.db)
-                scheduled_at = schedule_service._adjust_time_to_schedule(network, base_time)
-                print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
-                print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_at.strftime('%H:%M')}")
+                # Pas de publication précédente → vérifier la file d'attente
+                last_scheduled = self.db.query(PublicationQueue).filter(
+                    PublicationQueue.feed_id == post.feed_id,
+                    PublicationQueue.network == network,
+                    PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+                ).order_by(PublicationQueue.scheduled_at.desc()).first()
+                
+                if last_scheduled and last_scheduled.scheduled_at:
+                    # Programmer APRÈS le dernier post programmé + le délai
+                    scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                    print(f"🔄 DÉLAI FEED+RÉSEAU: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                    print(f"   → Heure calculée: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
+                else:
+                    # Premier post du feed - publier immédiatement (ou au prochain créneau autorisé)
+                    scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                    print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
+                    print(f"   → Publication immédiate: {scheduled_at.strftime('%H:%M')}")
             
             print(f"📅 Post #{post_id} programmé pour {network}:")
             print(f"   Heure optimale: {scheduled_at.strftime('%d/%m/%Y %H:%M')}")
