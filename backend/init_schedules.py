@@ -12,9 +12,10 @@ def init_default_schedules():
     """Initialiser les configurations d'horaires par défaut"""
     db = SessionLocal()
     try:
+        print("📅 Initialisation des horaires par défaut...")
         schedule_service = ScheduleService(db)
         schedule_service.create_default_schedules()
-        print("✅ Horaires par défaut initialisés avec succès")
+        print("✅ Initialisation des horaires terminée")
     except Exception as e:
         print(f"❌ Erreur lors de l'initialisation: {e}")
         import traceback

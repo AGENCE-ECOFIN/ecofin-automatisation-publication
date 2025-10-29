@@ -434,6 +434,9 @@ class ScheduleService:
             }
         ]
 
+        created_count = 0
+        existing_count = 0
+        
         for config_data in default_configs:
             # Vérifier si la config existe déjà
             existing = self.db.query(ScheduleConfig).filter(
@@ -445,8 +448,17 @@ class ScheduleService:
                 config = ScheduleConfigCreate(**config_data)
                 self.create_schedule_config(config)
                 print(f"✅ Configuration créée: {config_data['network']} - {config_data['day_type']}")
+                created_count += 1
+            else:
+                print(f"ℹ️  Configuration déjà existante: {config_data['network']} - {config_data['day_type']}")
+                existing_count += 1
 
         self.db.commit()
+        
+        if created_count == 0 and existing_count > 0:
+            print(f"\n✅ Toutes les configurations ({existing_count}) existent déjà - Aucune modification nécessaire")
+        elif created_count > 0:
+            print(f"\n✅ Initialisation terminée: {created_count} créée(s), {existing_count} déjà existante(s)")
 
     def recalculate_queue_for_network(self, network: str) -> int:
         """Recalculer les horaires des posts en attente pour un réseau"""
