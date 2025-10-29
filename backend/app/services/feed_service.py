@@ -123,16 +123,22 @@ class FeedService:
                 
                 for post in posts_to_delete:
                     if post.source_url:
-                        # Générer la clé de cache comme dans tasks.py
-                        article_hash = hash(post.source_url)
+                        # Générer la clé de cache comme dans tasks.py (hash déterministe avec hashlib)
+                        import hashlib
+                        article_hash = hashlib.md5(post.source_url.encode('utf-8')).hexdigest()
                         cache_key = f"article:{article_hash}"
                         
                         # Supprimer la clé du cache Redis
                         if redis_client.delete(cache_key):
                             cache_keys_deleted += 1
+                        else:
+                            # Log si la clé n'existe pas (pour debug)
+                            print(f"🔍 Cache key non trouvée: {cache_key} (source_url: {post.source_url[:50]}...)")
                 
                 if cache_keys_deleted > 0:
                     print(f"🗑️ Nettoyé {cache_keys_deleted} entrée(s) de cache Redis pour le flux #{feed_id}")
+                elif posts_to_delete:
+                    print(f"ℹ️ Aucune clé de cache Redis trouvée pour le flux #{feed_id} ({len(posts_to_delete)} posts avec source_url)")
             except Exception as redis_error:
                 # Ne pas bloquer la suppression si Redis échoue
                 print(f"⚠️ Erreur lors du nettoyage du cache Redis (ignorée): {redis_error}")

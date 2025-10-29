@@ -35,7 +35,9 @@ def fetch_and_process_feed(feed_id: int):
         for article in articles:
             try:
                 # Vérifier si l'article a déjà été traité
-                article_hash = hash(article['source_url'])
+                # Utiliser hashlib pour un hash déterministe (hash() Python est non-déterministe)
+                import hashlib
+                article_hash = hashlib.md5(article['source_url'].encode('utf-8')).hexdigest()
                 if redis_client.get(f"article:{article_hash}"):
                     print(f"⏭️  Article déjà traité (cache): {article['title'][:50]}...")
                     continue
