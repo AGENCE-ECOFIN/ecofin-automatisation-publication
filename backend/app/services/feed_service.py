@@ -84,12 +84,51 @@ class FeedService:
         return db_feed
 
     def delete_feed(self, feed_id: int) -> bool:
+        """Supprime un flux et tous les éléments associés en cascade"""
         db_feed = self.get_feed_by_id(feed_id)
         if not db_feed:
             return False
-        self.db.delete(db_feed)
-        self.db.commit()
-        return True
+        
+        # Sauvegarder le nom du flux avant suppression
+        feed_name = db_feed.name
+        
+        try:
+            # Importer les modèles nécessaires
+            from app.models.post import Post
+            from app.models.publication_queue import PublicationQueue
+            from app.models.publication import Publication
+            
+            # 1. Supprimer tous les posts associés (draft, validated, rejected)
+            posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
+            if posts_count > 0:
+                self.db.query(Post).filter(Post.feed_id == feed_id).delete()
+                print(f"🗑️ Supprimé {posts_count} post(s) associé(s) au flux #{feed_id}")
+            
+            # 2. Supprimer tous les éléments de la file d'attente associés
+            queue_count = self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).count()
+            if queue_count > 0:
+                self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).delete()
+                print(f"🗑️ Supprimé {queue_count} élément(s) de la file d'attente associé(s) au flux #{feed_id}")
+            
+            # 3. Supprimer toutes les publications associées
+            publications_count = self.db.query(Publication).filter(Publication.feed_id == feed_id).count()
+            if publications_count > 0:
+                self.db.query(Publication).filter(Publication.feed_id == feed_id).delete()
+                print(f"🗑️ Supprimé {publications_count} publication(s) associée(s) au flux #{feed_id}")
+            
+            # 4. Supprimer le flux lui-même
+            self.db.delete(db_feed)
+            self.db.commit()
+            
+            print(f"✅ Flux #{feed_id} '{feed_name}' supprimé avec succès (cascade)")
+            return True
+            
+        except Exception as e:
+            self.db.rollback()
+            print(f"❌ Erreur lors de la suppression du flux #{feed_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def fetch_feed_articles(self, feed: Feed) -> List[dict]:
         """Récupère les nouveaux articles d'un flux RSS"""
@@ -160,9 +199,12 @@ class FeedService:
                         print(f"Article déjà existant: {source_url}")
                         continue
                     
+                    # Extraire le contenu (summary ou description)
+                    content = entry.get('summary', '') or entry.get('description', '')
+                    
                     articles.append({
                         'title': entry.get('title', ''),
-                        'content': entry.get('summary', ''),
+                        'content': content,
                         'source_url': source_url,
                         'source_image': self._extract_image(entry),
                         'published': entry.get('published_parsed')
@@ -195,10 +237,29 @@ class FeedService:
                 if media.get('type', '').startswith('image/'):
                     return media.get('url')
         
-        if hasattr(entry, 'enclosures'):
+        # Vérifier les enclosures (comme dans les flux La Tribune)
+        if hasattr(entry, 'enclosures') and entry.enclosures:
             for enclosure in entry.enclosures:
-                if enclosure.get('type', '').startswith('image/'):
-                    return enclosure.get('href')
+                # feedparser peut stocker l'enclosure comme dict ou objet
+                if isinstance(enclosure, dict):
+                    enclosure_type = enclosure.get('type', '')
+                    if enclosure_type and enclosure_type.startswith('image/'):
+                        # feedparser peut stocker l'URL dans 'href', 'url', ou 'link'
+                        image_url = enclosure.get('href') or enclosure.get('url') or enclosure.get('link')
+                        if image_url:
+                            print(f"🖼️ Image trouvée via enclosure (dict): {image_url}")
+                            return image_url
+                else:
+                    # Si c'est un objet, essayer d'accéder aux attributs directement
+                    try:
+                        if hasattr(enclosure, 'type') and str(enclosure.type).startswith('image/'):
+                            image_url = getattr(enclosure, 'href', None) or getattr(enclosure, 'url', None) or getattr(enclosure, 'link', None)
+                            if image_url:
+                                print(f"🖼️ Image trouvée via enclosure (objet): {image_url}")
+                                return image_url
+                    except Exception as e:
+                        print(f"⚠️ Erreur lors de l'extraction d'enclosure (objet): {e}")
+                        continue
         
         # Rechercher dans les liens
         if hasattr(entry, 'links'):
