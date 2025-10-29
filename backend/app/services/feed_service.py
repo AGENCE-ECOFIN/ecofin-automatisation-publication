@@ -111,7 +111,33 @@ class FeedService:
                 self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).delete(synchronize_session=False)
                 print(f"🗑️ Supprimé {queue_count} élément(s) de la file d'attente associé(s) au flux #{feed_id}")
             
-            # 3. Supprimer tous les posts associés (draft, validated, rejected)
+            # 3. Nettoyer le cache Redis pour les articles de ce flux
+            try:
+                import redis
+                from app.core.config import settings
+                redis_client = redis.from_url(settings.REDIS_URL)
+                
+                # Récupérer tous les posts avant suppression pour obtenir leurs source_url
+                posts_to_delete = self.db.query(Post).filter(Post.feed_id == feed_id).all()
+                cache_keys_deleted = 0
+                
+                for post in posts_to_delete:
+                    if post.source_url:
+                        # Générer la clé de cache comme dans tasks.py
+                        article_hash = hash(post.source_url)
+                        cache_key = f"article:{article_hash}"
+                        
+                        # Supprimer la clé du cache Redis
+                        if redis_client.delete(cache_key):
+                            cache_keys_deleted += 1
+                
+                if cache_keys_deleted > 0:
+                    print(f"🗑️ Nettoyé {cache_keys_deleted} entrée(s) de cache Redis pour le flux #{feed_id}")
+            except Exception as redis_error:
+                # Ne pas bloquer la suppression si Redis échoue
+                print(f"⚠️ Erreur lors du nettoyage du cache Redis (ignorée): {redis_error}")
+            
+            # 4. Supprimer tous les posts associés (draft, validated, rejected)
             posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
             if posts_count > 0:
                 self.db.query(Post).filter(Post.feed_id == feed_id).delete(synchronize_session=False)
@@ -120,7 +146,7 @@ class FeedService:
             # Commit intermédiaire pour s'assurer que tout est supprimé
             self.db.flush()
             
-            # 4. Supprimer le flux lui-même
+            # 5. Supprimer le flux lui-même
             self.db.delete(db_feed)
             self.db.commit()
             
