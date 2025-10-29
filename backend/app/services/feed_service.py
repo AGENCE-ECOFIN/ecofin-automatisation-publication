@@ -121,24 +121,57 @@ class FeedService:
                 posts_to_delete = self.db.query(Post).filter(Post.feed_id == feed_id).all()
                 cache_keys_deleted = 0
                 
+                import hashlib
+                
+                # Méthode 1: Essayer avec hashlib.md5() (nouveau système déterministe)
                 for post in posts_to_delete:
                     if post.source_url:
-                        # Générer la clé de cache comme dans tasks.py (hash déterministe avec hashlib)
-                        import hashlib
                         article_hash = hashlib.md5(post.source_url.encode('utf-8')).hexdigest()
                         cache_key = f"article:{article_hash}"
                         
-                        # Supprimer la clé du cache Redis
                         if redis_client.delete(cache_key):
                             cache_keys_deleted += 1
-                        else:
-                            # Log si la clé n'existe pas (pour debug)
-                            print(f"🔍 Cache key non trouvée: {cache_key} (source_url: {post.source_url[:50]}...)")
+                
+                # Méthode 2: Supprimer TOUTES les clés article:*
+                # Nécessaire car les anciennes clés créées avec hash() non-déterministe
+                # ne peuvent pas être retrouvées avec le nouveau système
+                # Le cache sera recréé automatiquement lors des prochaines collectes
+                try:
+                    # Utiliser SCAN pour éviter de bloquer Redis avec KEYS sur de grandes bases
+                    cursor = 0
+                    all_article_keys = []
+                    
+                    while True:
+                        cursor, keys = redis_client.scan(cursor, match='article:*', count=1000)
+                        all_article_keys.extend(keys)
+                        if cursor == 0:
+                            break
+                    
+                    if all_article_keys:
+                        # Supprimer toutes les clés par batch pour éviter les problèmes de mémoire
+                        batch_size = 100
+                        for i in range(0, len(all_article_keys), batch_size):
+                            batch = all_article_keys[i:i + batch_size]
+                            deleted = redis_client.delete(*batch)
+                            cache_keys_deleted += deleted
+                        
+                        print(f"🗑️ Nettoyage complet: supprimé {len(all_article_keys)} clé(s) article:* (cache vidé)")
+                except Exception as scan_error:
+                    print(f"⚠️ Erreur lors du scan Redis (ignorée): {scan_error}")
+                    # Fallback: essayer avec KEYS si SCAN échoue (moins efficace mais fonctionne sur petites bases)
+                    try:
+                        all_article_keys = redis_client.keys('article:*')
+                        if all_article_keys:
+                            deleted = redis_client.delete(*all_article_keys)
+                            cache_keys_deleted += deleted
+                            print(f"🗑️ Nettoyage complet (KEYS fallback): supprimé {len(all_article_keys)} clé(s)")
+                    except Exception as keys_error:
+                        print(f"⚠️ Erreur lors du nettoyage global Redis (ignorée): {keys_error}")
                 
                 if cache_keys_deleted > 0:
-                    print(f"🗑️ Nettoyé {cache_keys_deleted} entrée(s) de cache Redis pour le flux #{feed_id}")
+                    print(f"🗑️ Total nettoyé: {cache_keys_deleted} entrée(s) de cache Redis pour le flux #{feed_id}")
                 elif posts_to_delete:
-                    print(f"ℹ️ Aucune clé de cache Redis trouvée pour le flux #{feed_id} ({len(posts_to_delete)} posts avec source_url)")
+                    print(f"ℹ️ Aucune clé de cache Redis trouvée pour le flux #{feed_id} ({len(posts_to_delete)} posts)")
             except Exception as redis_error:
                 # Ne pas bloquer la suppression si Redis échoue
                 print(f"⚠️ Erreur lors du nettoyage du cache Redis (ignorée): {redis_error}")
