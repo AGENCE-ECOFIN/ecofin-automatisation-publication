@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import NetworkCard from './NetworkCard';
 
-const PostFeedCard = ({ post, onView, onValidate, onReject, onEdit, onSave, onCancel, onRestore }) => {
+const PostFeedCard = ({ post, onView, onValidate, onReject, onEdit, onSave, onCancel, onRestore, onRejectGlobal, onRestoreGlobal }) => {
   // Pour les posts directs, utiliser les réseaux présents dans network_validations
   // Pour les posts de flux, utiliser les réseaux cibles du flux
   const targetNetworks = (post.is_direct || post.feed_id === null) 
@@ -47,11 +47,44 @@ const PostFeedCard = ({ post, onView, onValidate, onReject, onEdit, onSave, onCa
       
       {/* Contenu */}
       <div className="p-4">
-        {/* Header du feed */}
+        {/* Header du feed avec bouton de rejet global */}
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
-            {post.title}
-          </h3>
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 line-clamp-2 flex-1">
+              {post.title}
+            </h3>
+            {/* Boutons d'actions globales */}
+            <div className="flex space-x-2 flex-shrink-0">
+              {/* Bouton de rejet global */}
+              {(post.status === 'draft' || post.status === 'validated') && onRejectGlobal && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Êtes-vous sûr de vouloir rejeter globalement cet article ?\n\nTous les réseaux seront rejetés et retirés de la queue de publication.`)) {
+                      onRejectGlobal(post.id);
+                    }
+                  }}
+                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                  title="Rejeter globalement (tous les réseaux)"
+                >
+                  ❌ Rejeter tout
+                </button>
+              )}
+              {/* Bouton de restauration globale */}
+              {post.status === 'rejected' && onRestoreGlobal && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Êtes-vous sûr de vouloir restaurer globalement cet article ?\n\nTous les réseaux rejetés seront restaurés en brouillon.`)) {
+                      onRestoreGlobal(post.id);
+                    }
+                  }}
+                  className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                  title="Restaurer globalement (tous les réseaux)"
+                >
+                  ✅ Restaurer tout
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex items-center space-x-3 text-sm text-gray-600 mb-3">
             <span className="font-medium">{post.feed?.name || 'Inconnu'}</span>
             <span>•</span>

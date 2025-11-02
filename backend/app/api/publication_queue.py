@@ -281,14 +281,35 @@ def recalculate_queue_schedule(
             print(f"   Délai configuré: {delay_minutes} minutes")
             
             # Calculer les nouvelles heures en respectant les délais cumulés par feed et réseau
+            # et la règle: si file vide initialement et délai depuis dernier PUBLISHED dépassé → immédiat
             base_time = now + timedelta(minutes=delay_minutes)
+
+            # Récupérer le dernier publié pour ce feed/réseau
+            from app.models.publication import Publication
+            last_published = db.query(Publication).filter(
+                Publication.feed_id == feed_id,
+                Publication.network == network,
+                Publication.is_success == True,
+                Publication.published_at.isnot(None)
+            ).order_by(Publication.published_at.desc()).first()
             
             for i, post in enumerate(posts):
                 old_time = post.scheduled_at
                 
                 if i == 0:
-                    # Premier post du feed/réseau - ajuster aux horaires
-                    new_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                    # Premier post du feed/réseau
+                    if last_published and last_published.published_at:
+                        elapsed = now - last_published.published_at
+                        if elapsed >= timedelta(minutes=delay_minutes):
+                            # Délai dépassé → immédiat (ajusté aux horaires)
+                            new_time = schedule_service._adjust_time_to_schedule(network, now)
+                        else:
+                            # Délai pas dépassé → à la fin du délai (ajusté aux horaires)
+                            target = last_published.published_at + timedelta(minutes=delay_minutes)
+                            new_time = schedule_service._adjust_time_to_schedule(network, target)
+                    else:
+                        # Aucun historique publié → now + delay (ajusté aux horaires)
+                        new_time = schedule_service._adjust_time_to_schedule(network, base_time)
                 else:
                     # Posts suivants : après le post précédent + délai (sans ajustement horaire)
                     prev_post = posts[i-1]

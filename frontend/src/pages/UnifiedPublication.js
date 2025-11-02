@@ -131,6 +131,12 @@ const UnifiedPublication = () => {
   const { data: feedsData } = useQuery('feeds', feedsService.getFeeds);
   const feeds = feedsData?.data || [];
 
+  // Fonction helper pour obtenir le nom du flux
+  const getFeedName = (feedId) => {
+    if (!feedId) return null;
+    const feed = feeds.find(f => f.id === feedId);
+    return feed ? feed.name : `Flux #${feedId}`;
+  };
 
   // Mutations pour la file d'attente
   const pauseItemMutation = useMutation(publicationQueueService.pauseItem, {
@@ -672,6 +678,10 @@ const UnifiedPublication = () => {
                   <span className="sm:hidden">Post</span>
                 </th>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <span className="hidden sm:inline">Flux</span>
+                  <span className="sm:hidden">Flux</span>
+                </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Réseau
                 </th>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -699,10 +709,19 @@ const UnifiedPublication = () => {
                         <span className="hidden sm:inline">{item.content.substring(0, 100)}...</span>
                         <span className="sm:hidden">{item.content.substring(0, 50)}...</span>
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {item.feed_id ? `Flux #${item.feed_id}` : 
-                         item.is_immediate ? 'Post direct immédiat' : 'Post direct programmé'}
-                      </p>
+                    </div>
+                  </td>
+                  <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col">
+                      {item.feed_id ? (
+                        <span className="text-sm font-medium text-gray-900">
+                          {getFeedName(item.feed_id)}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-500 italic">
+                          {item.is_immediate ? 'Post direct immédiat' : 'Post direct programmé'}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-3 sm:px-6 py-4 whitespace-nowrap">

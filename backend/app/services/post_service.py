@@ -418,10 +418,34 @@ class PostService:
                 print(f"   → Dernier post programmé: {last_scheduled.scheduled_at.strftime('%H:%M')}")
                 print(f"   → Nouveau post: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
             else:
-                # File d'attente vide → publication immédiate (ou au prochain créneau autorisé)
-                scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
-                print(f"✨ File d'attente vide pour feed #{post.feed_id} sur {network}")
-                print(f"   → Publication immédiate: {scheduled_at.strftime('%H:%M')}")
+                # File d'attente vide → vérifier le dernier post publié pour décider immédiat ou délai restant
+                # Optimisation : utiliser limit(1) et seulement les colonnes nécessaires
+                from app.models.publication import Publication
+                last_published = self.db.query(Publication).filter(
+                    Publication.feed_id == post.feed_id,
+                    Publication.network == network,
+                    Publication.is_success == True,
+                    Publication.published_at.isnot(None)
+                ).order_by(Publication.published_at.desc()).limit(1).first()
+                
+                if last_published and last_published.published_at:
+                    time_since_last = now - last_published.published_at
+                    if time_since_last >= timedelta(minutes=delay_minutes):
+                        # Délai dépassé → publication immédiate (ajustée aux horaires)
+                        scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                        print(f"✨ File vide & délai dépassé (dernier à {last_published.published_at.strftime('%H:%M')}) → immédiat: {scheduled_at.strftime('%H:%M')}")
+                    else:
+                        # Délai restant → programmer à fin du délai (ajustée aux horaires)
+                        scheduled_at = schedule_service._adjust_time_to_schedule(
+                            network,
+                            last_published.published_at + timedelta(minutes=delay_minutes)
+                        )
+                        remaining = int(((timedelta(minutes=delay_minutes) - time_since_last).total_seconds()) // 60)
+                        print(f"⏳ File vide & délai en cours (reste ~{remaining}min) → {scheduled_at.strftime('%H:%M')}")
+                else:
+                    # Aucun historique publié → publication immédiate (ajustée aux horaires)
+                    scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                    print(f"✨ File vide & aucun publié → immédiat: {scheduled_at.strftime('%H:%M')}")
             
             # Récupérer les pages sociales du flux
             social_pages = post.feed.social_pages or {}
@@ -431,19 +455,15 @@ class PostService:
                 print(f"❌ [QUEUE] Aucune page configurée pour le réseau {network}")
                 return
             
-            # Vérifier si ce réseau n'est pas déjà en queue
-            existing_queue = self.db.query(PublicationQueue).filter(
-                PublicationQueue.feed_id == post.feed_id,
-                PublicationQueue.network == network,
-                PublicationQueue.status.in_(['pending', 'scheduled'])
-            ).first()
-            
-            if existing_queue:
-                print(f"⚠️ [QUEUE] Réseau {network} déjà en queue pour ce feed")
+            # Vérifier si ce POST spécifique n'est pas déjà en queue pour ce réseau
+            # (vérification rapide : si on a déjà des posts en file, on vérifie aussi ce post_id)
+            if existing_queue_posts and any(q.post_id == post.id for q in existing_queue_posts):
+                print(f"⚠️ [QUEUE] Post #{post.id} déjà en queue pour {network}")
                 return
             
             # Créer l'entrée dans la queue
             queue_entry = PublicationQueue(
+                post_id=post.id,
                 feed_id=post.feed_id,
                 network=network,
                 target_page_id=page_id,
@@ -509,24 +529,54 @@ class PostService:
                     # Délai : depuis la config GLOBALE
                     delay_minutes = network_config.default_publication_delay
                     
-                    # 🔥 DÉLAI PAR FEED ET RÉSEAU : Vérifier le dernier post du même feed sur le même réseau
-                    last_scheduled = self.db.query(PublicationQueue).filter(
+                    # 🔥 DÉLAI PAR FEED ET RÉSEAU : Vérifier s'il y a des posts en file d'attente
+                    existing_queue_posts = self.db.query(PublicationQueue).filter(
                         PublicationQueue.feed_id == post.feed_id,
                         PublicationQueue.network == network,
                         PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
-                    ).order_by(PublicationQueue.scheduled_at.desc()).first()
+                    ).order_by(PublicationQueue.scheduled_at.desc()).all()
                     
-                    if last_scheduled and last_scheduled.scheduled_at:
-                        # Programmer APRÈS le dernier post programmé + le délai (sans ajustement horaire)
+                    if existing_queue_posts:
+                        # Il y a des posts en file d'attente → appliquer le délai cumulatif
+                        last_scheduled = existing_queue_posts[0]  # Le plus récent
                         scheduled_time = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                        print(f"🔄 DÉLAI FEED+RÉSEAU: Dernier post du feed #{post.feed_id} sur {network} programmé à {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                        print(f"   → Heure calculée: {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
+                        print(f"🔄 DÉLAI CUMULATIF: {len(existing_queue_posts)} post(s) en file pour feed #{post.feed_id} sur {network}")
+                        print(f"   → Dernier post programmé: {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                        print(f"   → Nouveau post: {scheduled_time.strftime('%H:%M')} (après {delay_minutes}min)")
                     else:
-                        # Pas de post en attente pour ce feed, programmer normalement avec ajustement horaire
-                        base_time = now + timedelta(minutes=delay_minutes)
-                        scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
-                        print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
-                        print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
+                        # File d'attente vide → vérifier le dernier post publié
+                        from app.models.publication import Publication
+                        last_published = self.db.query(Publication).filter(
+                            Publication.feed_id == post.feed_id,
+                            Publication.network == network,
+                            Publication.is_success == True,
+                            Publication.published_at.isnot(None)
+                        ).order_by(Publication.published_at.desc()).first()
+                        
+                        if last_published and last_published.published_at:
+                            # Vérifier si le délai est dépassé depuis le dernier post publié
+                            time_since_last = now - last_published.published_at
+                            delay_seconds = delay_minutes * 60
+                            
+                            if time_since_last.total_seconds() >= delay_seconds:
+                                # Délai dépassé → publication immédiate
+                                scheduled_time = schedule_service._adjust_time_to_schedule(network, now)
+                                print(f"✨ DÉLAI DÉPASSÉ: Dernier post publié à {last_published.published_at.strftime('%H:%M')}")
+                                print(f"   → Publication immédiate: {scheduled_time.strftime('%H:%M')}")
+                            else:
+                                # Délai pas encore dépassé → programmer à la fin du délai
+                                scheduled_time = last_published.published_at + timedelta(minutes=delay_minutes)
+                                scheduled_time = schedule_service._adjust_time_to_schedule(network, scheduled_time)
+                                remaining_minutes = int((delay_seconds - time_since_last.total_seconds()) / 60)
+                                print(f"⏳ DÉLAI EN COURS: Dernier post publié à {last_published.published_at.strftime('%H:%M')}")
+                                print(f"   → Délai restant: {remaining_minutes}min")
+                                print(f"   → Programmé à: {scheduled_time.strftime('%H:%M')}")
+                        else:
+                            # Premier post du feed → programmer normalement avec ajustement horaire
+                            base_time = now + timedelta(minutes=delay_minutes)
+                            scheduled_time = schedule_service._adjust_time_to_schedule(network, base_time)
+                            print(f"✨ Premier post du feed #{post.feed_id} sur {network}")
+                            print(f"   → Heure calculée: {base_time.strftime('%H:%M')} → Ajustée: {scheduled_time.strftime('%H:%M')}")
                     print(f"📅 Heure finale programmée: {scheduled_time.strftime('%H:%M')}")
                     
                     # Déterminer le statut selon l'heure programmée et les horaires configurés
@@ -789,7 +839,7 @@ class PostService:
         
         # Récupérer les feed_ids qui ont des éléments en queue
         queue_feed_ids = self.db.query(PublicationQueue.feed_id).filter(
-            PublicationQueue.status.in_(['scheduled', 'pending'])
+            PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
         ).distinct().all()
         
         feed_ids = [feed_id[0] for feed_id in queue_feed_ids if feed_id[0] is not None]
@@ -802,11 +852,11 @@ class PostService:
             Post.feed_id.in_(feed_ids)
         ).order_by(Post.created_at.desc()).all()
         
-        # Enrichir chaque post avec les informations de queue
+        # Enrichir chaque post avec les informations de queue (tous réseaux confondus pour affichage)
         for post in posts:
             queue_items = self.db.query(PublicationQueue).filter(
                 PublicationQueue.feed_id == post.feed_id,
-                PublicationQueue.status.in_(['scheduled', 'pending'])
+                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
             ).all()
             
             # Ajouter les informations de queue au post
@@ -841,31 +891,95 @@ class PostService:
     def get_publication_history(self, limit: int = 100) -> List[Publication]:
         return self.db.query(Publication).order_by(Publication.published_at.desc()).limit(limit).all()
 
-    def reject_post(self, post_id: int, user_id: int) -> Post:
-        """Rejeter un post"""
+    def reject_post(self, post_id: int, user_id: int, rejection_reason: str = None) -> Post:
+        """Rejeter un post globalement (rejette tous les réseaux et retire de la queue)"""
         post = self.get_post_by_id(post_id)
         if not post:
             raise ValueError("Post non trouvé")
         
+        # Initialiser network_validations si nécessaire
+        if not post.network_validations:
+            post.network_validations = {}
+        
+        # Rejeter tous les réseaux générés
+        generated_content = post.generated_content if isinstance(post.generated_content, dict) else {}
+        all_networks = list(generated_content.keys()) if generated_content else []
+        
+        for network in all_networks:
+            post.network_validations[network] = {
+                "status": "rejected",
+                "validated_by": user_id,
+                "validated_at": datetime.utcnow().isoformat(),
+                "rejection_reason": rejection_reason
+            }
+        
+        # Forcer la mise à jour de l'objet JSON
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(post, 'network_validations')
+        
+        # Retirer tous les éléments de ce post de la queue de publication
+        from app.models.publication_queue import PublicationQueue
+        queue_items = self.db.query(PublicationQueue).filter(
+            PublicationQueue.post_id == post_id,
+            PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+        ).all()
+        
+        if queue_items:
+            for item in queue_items:
+                item.status = 'CANCELLED'
+                print(f"🗑️ [REJECT] Élément de queue #{item.id} annulé pour post #{post_id}")
+        
+        # Marquer le post comme rejeté globalement
         post.status = "rejected"
         post.validated_by = user_id
         post.validated_at = datetime.utcnow()
         
         self.db.commit()
         self.db.refresh(post)
+        print(f"✅ [REJECT] Post #{post_id} rejeté globalement avec {len(all_networks)} réseau(x)")
         return post
 
     def restore_post(self, post_id: int) -> Post:
-        """Restaurer un post rejeté en brouillon"""
+        """Restaurer un post rejeté globalement (restaure tous les réseaux rejetés en brouillon)"""
         post = self.get_post_by_id(post_id)
         if not post:
             raise ValueError("Post non trouvé")
         
+        # Initialiser network_validations si nécessaire
+        if not post.network_validations:
+            post.network_validations = {}
+        
+        # Restaurer tous les réseaux rejetés en brouillon
+        generated_content = post.generated_content if isinstance(post.generated_content, dict) else {}
+        all_networks = list(generated_content.keys()) if generated_content else []
+        
+        for network in all_networks:
+            # Si le réseau est rejeté, le restaurer en brouillon
+            network_validation = post.network_validations.get(network, {})
+            if network_validation.get("status") == "rejected":
+                post.network_validations[network] = {
+                    "status": "draft",
+                    "validated_by": None,
+                    "validated_at": None,
+                    "rejection_reason": None
+                }
+            elif network not in post.network_validations:
+                # Si le réseau n'a pas de validation, l'initialiser en brouillon
+                post.network_validations[network] = {
+                    "status": "draft"
+                }
+        
+        # Forcer la mise à jour de l'objet JSON
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(post, 'network_validations')
+        
+        # Remettre le post en brouillon
         post.status = "draft"
         post.validated_by = None
         post.validated_at = None
         
         self.db.commit()
         self.db.refresh(post)
+        print(f"✅ [RESTORE] Post #{post_id} restauré globalement avec {len(all_networks)} réseau(x)")
         return post
 

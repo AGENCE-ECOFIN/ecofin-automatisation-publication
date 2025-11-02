@@ -8,6 +8,7 @@ class PublicationQueue(Base):
     __tablename__ = "publication_queue"
 
     id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)  # ID du post (peut être NULL)
     feed_id = Column(Integer, ForeignKey("feeds.id"), nullable=True)  # NULL pour posts directs
     network = Column(String, nullable=False)  # facebook, linkedin, x
     target_page_id = Column(String, nullable=True)  # ID de la page de destination

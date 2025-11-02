@@ -71,10 +71,33 @@ class PublicationQueueService:
                 print(f"   → Dernier post programmé: {last_scheduled.scheduled_at.strftime('%H:%M')}")
                 print(f"   → Nouveau post: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
             else:
-                # File d'attente vide → publication immédiate (ou au prochain créneau autorisé)
-                scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
-                print(f"✨ File d'attente vide pour feed #{post.feed_id} sur {network}")
-                print(f"   → Publication immédiate: {scheduled_at.strftime('%H:%M')}")
+                # File d'attente vide → vérifier le dernier post publié pour décider immédiat ou délai restant
+                from app.models.publication import Publication
+                last_published = self.db.query(Publication).filter(
+                    Publication.feed_id == post.feed_id,
+                    Publication.network == network,
+                    Publication.is_success == True,
+                    Publication.published_at.isnot(None)
+                ).order_by(Publication.published_at.desc()).first()
+
+                if last_published and last_published.published_at:
+                    time_since_last = now - last_published.published_at
+                    if time_since_last >= timedelta(minutes=delay_minutes):
+                        # Délai dépassé → publication immédiate (ajustée aux horaires)
+                        scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                        print(f"✨ File vide & délai dépassé (dernier à {last_published.published_at.strftime('%H:%M')}) → immédiat: {scheduled_at.strftime('%H:%M')}")
+                    else:
+                        # Délai restant → programmer à fin du délai (ajustée aux horaires)
+                        scheduled_at = schedule_service._adjust_time_to_schedule(
+                            network,
+                            last_published.published_at + timedelta(minutes=delay_minutes)
+                        )
+                        remaining = int(((timedelta(minutes=delay_minutes) - time_since_last).total_seconds()) // 60)
+                        print(f"⏳ File vide & délai en cours (reste ~{remaining}min) → {scheduled_at.strftime('%H:%M')}")
+                else:
+                    # Aucun historique publié → publication immédiate (ajustée aux horaires)
+                    scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                    print(f"✨ File vide & aucun publié → immédiat: {scheduled_at.strftime('%H:%M')}")
             
             print(f"📅 Post #{post_id} programmé pour {network}:")
             print(f"   Heure optimale: {scheduled_at.strftime('%d/%m/%Y %H:%M')}")

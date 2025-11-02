@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest
+from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest, PostRejectRequest
 from app.schemas.publication import PublicationResponse
 from app.services.post_service import PostService
 from app.api.dependencies import get_current_user
 from app.models.user import User
-from typing import List
+from typing import List, Optional
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -132,9 +132,11 @@ def validate_post(
 @router.post("/{post_id}/reject")
 def reject_post(
     post_id: int,
+    request: Optional[PostRejectRequest] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Rejeter un post globalement (rejette tous les réseaux et retire de la queue) - motif optionnel"""
     post_service = PostService(db)
     post = post_service.get_post_by_id(post_id)
     if not post:
@@ -143,16 +145,16 @@ def reject_post(
             detail="Post non trouvé"
         )
     
-    if post.status != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Seuls les brouillons peuvent être rejetés"
-        )
+    # Permettre le rejet même si le post a des réseaux validés
+    # Motif de rejet optionnel (pas nécessaire) - peut être None ou non fourni
+    rejection_reason = None
+    if request is not None and hasattr(request, 'rejection_reason'):
+        rejection_reason = request.rejection_reason
     
-    # Marquer le post comme rejeté
-    post_service.reject_post(post_id, current_user.id)
+    # Marquer le post comme rejeté globalement
+    post_service.reject_post(post_id, current_user.id, rejection_reason)
     
-    return {"message": "Post rejeté avec succès"}
+    return {"message": "Post rejeté globalement avec succès (tous les réseaux rejetés et retirés de la queue)"}
 
 
 @router.post("/{post_id}/restore")
@@ -161,6 +163,7 @@ def restore_post(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Restaurer un post rejeté globalement (restaure tous les réseaux rejetés en brouillon)"""
     post_service = PostService(db)
     post = post_service.get_post_by_id(post_id)
     if not post:
@@ -169,16 +172,18 @@ def restore_post(
             detail="Post non trouvé"
         )
     
-    if post.status != "rejected":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Seuls les posts rejetés peuvent être restaurés"
-        )
+    # Permettre la restauration même si le post n'est pas strictement "rejected"
+    # (certains posts peuvent avoir des réseaux rejetés mais un statut différent)
+    # if post.status != "rejected":
+    #     raise HTTPException(
+    #         status_code=status.HTTP_400_BAD_REQUEST,
+    #         detail="Seuls les posts rejetés peuvent être restaurés"
+    #     )
     
-    # Remettre le post en brouillon
+    # Restaurer globalement le post (tous les réseaux rejetés)
     post_service.restore_post(post_id)
     
-    return {"message": "Post restauré en brouillon avec succès"}
+    return {"message": "Post restauré globalement avec succès (tous les réseaux rejetés restaurés en brouillon)"}
 
 
 @router.post("/{post_id}/publish-now")

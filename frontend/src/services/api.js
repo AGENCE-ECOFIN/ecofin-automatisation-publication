@@ -379,7 +379,7 @@ export const postsService = {
              throw error;
            }
          },
-         rejectPost: async (id) => {
+         rejectPost: async (id, rejectionReason = null) => {
            if (USE_MOCK_DATA) {
              await delay(800);
              if (shouldSimulateError()) {
@@ -387,7 +387,10 @@ export const postsService = {
              }
              return { data: { message: 'Post rejeté avec succès' } };
            }
-           return api.post(`/posts/${id}/reject`);
+           // Envoyer un body vide si pas de raison, ou un objet avec rejection_reason si fourni
+           // Envoyer un body vide {} si pas de raison (FastAPI accepte un body vide pour les schémas avec tous les champs optionnels)
+           const body = rejectionReason ? { rejection_reason: rejectionReason } : {};
+           return api.post(`/posts/${id}/reject`, body);
          },
          restorePost: async (id) => {
            if (USE_MOCK_DATA) {

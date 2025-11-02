@@ -31,6 +31,13 @@ class NetworkValidationRequest(BaseModel):
     action: str  # 'validate' ou 'reject'
     rejection_reason: Optional[str] = None
 
+class PostRejectRequest(BaseModel):
+    rejection_reason: Optional[str] = None
+    
+    class Config:
+        # Permettre un body vide (tous les champs sont optionnels)
+        extra = "forbid"
+
 
 class FeedInfo(BaseModel):
     id: int

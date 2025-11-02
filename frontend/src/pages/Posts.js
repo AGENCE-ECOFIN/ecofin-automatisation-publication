@@ -128,6 +128,55 @@ const Posts = () => {
     }
   );
 
+  // Mutation pour le rejet global d'un post
+  const rejectPostMutation = useMutation(
+    ({ postId, rejectionReason }) => {
+      console.log('🔧 [FRONTEND] Rejet global du post:', { postId, rejectionReason });
+      return postsService.rejectPost(postId, rejectionReason);
+    },
+    {
+      onSuccess: (data) => {
+        console.log('✅ [FRONTEND] Post rejeté globalement avec succès:', data);
+        // Forcer le rechargement des données
+        queryClient.invalidateQueries('drafts');
+        queryClient.invalidateQueries('validated');
+        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries('queue');
+        queryClient.refetchQueries('drafts');
+        alert('Post rejeté globalement avec succès (tous les réseaux rejetés et retirés de la queue)');
+      },
+      onError: (error) => {
+        console.error('❌ [FRONTEND] Erreur lors du rejet global:', error);
+        alert('Erreur lors du rejet global: ' + (error.response?.data?.detail || error.message));
+      }
+    }
+  );
+
+  // Mutation pour la restauration globale d'un post
+  const restorePostMutation = useMutation(
+    (postId) => {
+      console.log('🔧 [FRONTEND] Restauration globale du post:', { postId });
+      return postsService.restorePost(postId);
+    },
+    {
+      onSuccess: (data) => {
+        console.log('✅ [FRONTEND] Post restauré globalement avec succès:', data);
+        // Forcer le rechargement des données
+        queryClient.invalidateQueries('drafts');
+        queryClient.invalidateQueries('validated');
+        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries('queue');
+        queryClient.refetchQueries('drafts');
+        queryClient.refetchQueries('rejected');
+        alert('Post restauré globalement avec succès (tous les réseaux rejetés restaurés en brouillon)');
+      },
+      onError: (error) => {
+        console.error('❌ [FRONTEND] Erreur lors de la restauration globale:', error);
+        alert('Erreur lors de la restauration globale: ' + (error.response?.data?.detail || error.message));
+      }
+    }
+  );
+
   // Handlers
   const handleViewPost = (post, network = null) => {
     setSelectedPost(post);
@@ -169,6 +218,22 @@ const Posts = () => {
     restoreNetworkMutation.mutate({ postId, network });
   };
 
+  const handleRejectPost = (postId) => {
+    if (window.confirm('Êtes-vous sûr de vouloir rejeter globalement cet article ?\n\nTous les réseaux seront rejetés et retirés de la queue de publication.')) {
+      // Pas besoin de motif - envoyer null ou un objet vide
+      rejectPostMutation.mutate({ 
+        postId, 
+        rejectionReason: null 
+      });
+    }
+  };
+
+  const handleRestorePost = (postId) => {
+    if (window.confirm('Êtes-vous sûr de vouloir restaurer globalement cet article ?\n\nTous les réseaux rejetés seront restaurés en brouillon.')) {
+      restorePostMutation.mutate(postId);
+    }
+  };
+
   // Pas besoin de séparer par réseau, on garde les posts groupés par feed
 
   // Fonction de filtrage
@@ -208,6 +273,8 @@ const Posts = () => {
       console.log('🔍 [VALIDATED TAB] Utilisation des posts validés de l\'API...');
       console.log('🔍 [VALIDATED TAB] safeValidated:', safeValidated.length, 'posts');
       posts = safeValidated;
+    } else if (activeTab === 'rejected') {
+      posts = safeRejected;
     }
     
     const filteredPosts = filterPosts(posts);
@@ -245,7 +312,8 @@ const Posts = () => {
             <nav className="-mb-px flex space-x-8">
               {[
                 { id: 'drafts', label: 'Brouillons', count: safeDrafts.length },
-                { id: 'validated', label: 'Validés', count: safeValidated.length }
+                { id: 'validated', label: 'Validés', count: safeValidated.length },
+                { id: 'rejected', label: 'Rejetés', count: safeRejected.length }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -348,6 +416,8 @@ const Posts = () => {
                 onView={handleViewPost}
                 onValidate={handleValidateNetwork}
                 onReject={handleRejectNetwork}
+                onRejectGlobal={handleRejectPost}
+                onRestoreGlobal={handleRestorePost}
                 onEdit={handleEditPost}
                 onSave={handleSaveNetworkContent}
                 onCancel={() => setIsModalOpen(false)}
