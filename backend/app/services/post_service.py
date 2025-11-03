@@ -4,6 +4,7 @@ from app.models.publication import Publication
 from app.models.publication_queue import PublicationQueue
 from app.models.network_config import NetworkConfig
 from app.schemas.post import PostCreate, PostUpdate, PostValidate
+from app.services.audit_service import AuditService
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
@@ -11,8 +12,9 @@ from datetime import datetime, timezone, timedelta
 class PostService:
     def __init__(self, db: Session):
         self.db = db
+        self.audit_service = AuditService(db)
 
-    def create_post(self, post: PostCreate) -> Post:
+    def create_post(self, post: PostCreate, user_id: Optional[int] = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Post:
         db_post = Post(
             title=post.title,
             content=post.content,
@@ -24,6 +26,20 @@ class PostService:
         self.db.add(db_post)
         self.db.commit()
         self.db.refresh(db_post)
+        
+        # Logger uniquement les posts directs (feed_id est None)
+        if post.feed_id is None and user_id:
+            self.audit_service.log_action(
+                action="POST_CREATE",
+                entity_type="post",
+                user_id=user_id,
+                entity_id=db_post.id,
+                description=f"Création d'un post direct: '{db_post.title[:50]}...'",
+                metadata={"post_title": db_post.title, "is_direct": True},
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        
         return db_post
 
     def get_posts(self, status: Optional[str] = None, feed_id: Optional[int] = None) -> List[Post]:
@@ -148,17 +164,47 @@ class PostService:
     def get_post_by_id(self, post_id: int) -> Optional[Post]:
         return self.db.query(Post).options(joinedload(Post.feed)).filter(Post.id == post_id).first()
 
-    def update_post(self, post_id: int, post_update: PostUpdate) -> Optional[Post]:
+    def update_post(self, post_id: int, post_update: PostUpdate, user_id: Optional[int] = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Optional[Post]:
         db_post = self.get_post_by_id(post_id)
         if not db_post:
             return None
 
         update_data = post_update.model_dump(exclude_unset=True)
+        
+        # Préparer les métadonnées pour l'audit
+        modified_fields = list(update_data.keys())
+        
+        # Fusionner le generated_content au lieu de le remplacer complètement
+        if 'generated_content' in update_data:
+            existing_content = db_post.generated_content or {}
+            new_content = update_data.pop('generated_content')
+            # Fusionner: garder l'existant et mettre à jour/ajouter les nouvelles clés
+            merged_content = {**existing_content, **new_content}
+            db_post.generated_content = merged_content
+            # Forcer la mise à jour de l'objet JSON
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(db_post, 'generated_content')
+        
+        # Appliquer les autres champs normalement
         for field, value in update_data.items():
             setattr(db_post, field, value)
 
         self.db.commit()
         self.db.refresh(db_post)
+        
+        # Logger la modification
+        if user_id:
+            self.audit_service.log_action(
+                action="POST_MODIFY",
+                entity_type="post",
+                user_id=user_id,
+                entity_id=post_id,
+                description=f"Modification du post '{db_post.title[:50]}...'",
+                metadata={"modified_fields": modified_fields, "post_title": db_post.title},
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        
         return db_post
 
     def validate_post(self, post_id: int, post_validate: PostValidate, user_id: int) -> Optional[Post]:
@@ -181,6 +227,18 @@ class PostService:
             self._schedule_validated_post(db_post)
             print(f"✅ Post #{post_id} validé et programmé selon les critères")
             
+            # Logger la validation
+            self.audit_service.log_action(
+                action="POST_VALIDATE",
+                entity_type="post",
+                user_id=user_id,
+                entity_id=post_id,
+                description=f"Validation complète du post '{db_post.title[:50]}...'",
+                metadata={"post_title": db_post.title, "networks": list(db_post.generated_content.keys()) if db_post.generated_content else []},
+                ip_address=None,
+                user_agent=None
+            )
+            
             return db_post
             
         except Exception as e:
@@ -188,7 +246,7 @@ class PostService:
             self.db.rollback()
             return None
 
-    def validate_network(self, post_id: int, network: str, user_id: int) -> Optional[Post]:
+    def validate_network(self, post_id: int, network: str, user_id: int, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Optional[Post]:
         """Valider un réseau spécifique d'un post"""
         try:
             print(f"🚀 [VALIDATE] Début validation du réseau {network} pour post #{post_id} par user #{user_id}")
@@ -250,6 +308,19 @@ class PostService:
                 print(f"🎯 [VALIDATE] Post #{post_id} entièrement validé!")
             
             print(f"🔍 [VALIDATE] Validations finales: {db_post.network_validations}")
+            
+            # Logger la validation du réseau
+            self.audit_service.log_action(
+                action="POST_VALIDATE",
+                entity_type="post",
+                user_id=user_id,
+                entity_id=post_id,
+                description=f"Validation du post '{db_post.title[:50]}...' sur {network}",
+                metadata={"network": network, "post_title": db_post.title},
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            
             return db_post
             
         except Exception as e:
@@ -259,7 +330,7 @@ class PostService:
             self.db.rollback()
             return None
 
-    def reject_network(self, post_id: int, network: str, user_id: int, rejection_reason: str = None) -> Optional[Post]:
+    def reject_network(self, post_id: int, network: str, user_id: int, rejection_reason: str = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Optional[Post]:
         """Rejeter un réseau spécifique d'un post"""
         try:
             print(f"🚀 [REJECT] Début rejet du réseau {network} pour post #{post_id} par user #{user_id}")
@@ -313,6 +384,23 @@ class PostService:
             print(f"✅ [REJECT] Réseau {network} traité pour post #{post_id}")
             print(f"🔍 [REJECT] Validations finales: {db_post.network_validations}")
             
+            # Logger le rejet du réseau (seulement si c'est un vrai rejet, pas une restauration)
+            if rejection_reason is not None:
+                self.audit_service.log_action(
+                    action="POST_REJECT",
+                    entity_type="post",
+                    user_id=user_id,
+                    entity_id=post_id,
+                    description=f"Rejet du post '{db_post.title[:50]}...' sur {network}",
+                    metadata={
+                        "network": network,
+                        "rejection_reason": rejection_reason,
+                        "post_title": db_post.title
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
+            
             return db_post
             
         except Exception as e:
@@ -322,7 +410,7 @@ class PostService:
             self.db.rollback()
             return None
 
-    def restore_network(self, post_id: int, network: str, user_id: int) -> Optional[Post]:
+    def restore_network(self, post_id: int, network: str, user_id: int, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Optional[Post]:
         """Restaurer un réseau spécifique d'un post (remettre en brouillon)"""
         try:
             print(f"🔄 [RESTORE] Début restauration du réseau {network} pour post #{post_id} par user #{user_id}")
@@ -361,6 +449,21 @@ class PostService:
             
             print(f"✅ [RESTORE] Réseau {network} restauré pour post #{post_id}")
             print(f"🔍 [RESTORE] Validations finales: {db_post.network_validations}")
+            
+            # Logger la restauration du réseau
+            self.audit_service.log_action(
+                action="POST_RESTORE",
+                entity_type="post",
+                user_id=user_id,
+                entity_id=post_id,
+                description=f"Restauration du post '{db_post.title[:50]}...' sur {network}",
+                metadata={
+                    "network": network,
+                    "post_title": db_post.title
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
             
             return db_post
             
@@ -891,7 +994,7 @@ class PostService:
     def get_publication_history(self, limit: int = 100) -> List[Publication]:
         return self.db.query(Publication).order_by(Publication.published_at.desc()).limit(limit).all()
 
-    def reject_post(self, post_id: int, user_id: int, rejection_reason: str = None) -> Post:
+    def reject_post(self, post_id: int, user_id: int, rejection_reason: str = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Post:
         """Rejeter un post globalement (rejette tous les réseaux et retire de la queue)"""
         post = self.get_post_by_id(post_id)
         if not post:
@@ -937,6 +1040,24 @@ class PostService:
         self.db.commit()
         self.db.refresh(post)
         print(f"✅ [REJECT] Post #{post_id} rejeté globalement avec {len(all_networks)} réseau(x)")
+        
+        # Logger le rejet
+        self.audit_service.log_action(
+            action="POST_REJECT",
+            entity_type="post",
+            user_id=user_id,
+            entity_id=post_id,
+            description=f"Rejet global du post '{post.title[:50]}...'",
+            metadata={
+                "is_global": True,
+                "rejection_reason": rejection_reason,
+                "networks": all_networks,
+                "post_title": post.title
+            },
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        
         return post
 
     def restore_post(self, post_id: int) -> Post:
@@ -981,5 +1102,22 @@ class PostService:
         self.db.commit()
         self.db.refresh(post)
         print(f"✅ [RESTORE] Post #{post_id} restauré globalement avec {len(all_networks)} réseau(x)")
+        
+        # Logger la restauration
+        self.audit_service.log_action(
+            action="POST_RESTORE",
+            entity_type="post",
+            user_id=None,  # Restauration peut être automatique
+            entity_id=post_id,
+            description=f"Restauration globale du post '{post.title[:50]}...'",
+            metadata={
+                "is_global": True,
+                "networks": all_networks,
+                "post_title": post.title
+            },
+            ip_address=None,
+            user_agent=None
+        )
+        
         return post
 

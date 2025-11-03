@@ -1,14 +1,20 @@
 import openai
 from app.core.config import settings
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 class LLMService:
+    # Mapping des variables disponibles dans les prompts
+    VARIABLES_MAPPING = {
+        '{titre}': 'title',
+        '{contenu}': 'content',
+        '{url}': 'source_url'
+    }
     def __init__(self):
         if settings.OPENAI_API_KEY:
             openai.api_key = settings.OPENAI_API_KEY
 
-    def generate_social_media_posts(self, article_content: str, custom_prompt: str = None, network_prompts: Dict[str, str] = None, target_networks: List[str] = None, source_url: str = None) -> Dict[str, Any]:
+    def generate_social_media_posts(self, article_content: str, custom_prompt: str = None, network_prompts: Dict[str, str] = None, target_networks: List[str] = None, source_url: str = None, title: str = None, source_image: str = None) -> Dict[str, Any]:
         """
         Génère des posts pour différents réseaux sociaux à partir du contenu d'un article
         """
@@ -20,9 +26,19 @@ class LLMService:
         if not settings.OPENAI_API_KEY:
             return self._generate_test_posts(article_content, target_networks, source_url)
         
+        # DEBUG: Afficher les prompts reçus
+        print(f"🔍 [LLM] generate_social_media_posts - network_prompts reçus: {network_prompts}")
+        print(f"🔍 [LLM] network_prompts est None: {network_prompts is None}")
+        if network_prompts:
+            print(f"🔍 [LLM] network_prompts contient des valeurs: {any(network_prompts.values())}")
+            print(f"🔍 [LLM] Détail des prompts: {network_prompts}")
+        
         # Si des prompts spécifiques par réseau sont fournis, les utiliser
         if network_prompts and any(network_prompts.values()):
-            return self._generate_posts_with_specific_prompts(article_content, network_prompts, target_networks, source_url)
+            print(f"✅ [LLM] Utilisation des prompts spécifiques par réseau")
+            return self._generate_posts_with_specific_prompts(article_content, network_prompts, target_networks, source_url, title, source_image)
+        else:
+            print(f"⚠️ [LLM] Pas de prompts spécifiques, utilisation du prompt général")
         
         # Sinon, utiliser le prompt général
         networks_description = ", ".join(target_networks).title()
@@ -71,24 +87,59 @@ class LLMService:
                 error_posts[network] = "Erreur lors de la génération"
             return error_posts
 
-    def _generate_posts_with_specific_prompts(self, article_content: str, network_prompts: Dict[str, str], target_networks: List[str], source_url: str = None) -> Dict[str, Any]:
+    def _replace_variables(self, prompt: str, article_data: Dict[str, Any]) -> str:
+        """
+        Remplace les variables dans le prompt par leurs valeurs réelles
+        Variables disponibles: {titre}, {contenu}, {url}
+        """
+        if not prompt:
+            return prompt
+        
+        result = prompt
+        for var_name, var_key in self.VARIABLES_MAPPING.items():
+            value = article_data.get(var_key, '')
+            # Convertir en string et gérer les valeurs None
+            value_str = str(value) if value is not None else ''
+            result = result.replace(var_name, value_str)
+        
+        return result
+    
+    def _generate_posts_with_specific_prompts(self, article_content: str, network_prompts: Dict[str, str], target_networks: List[str], source_url: str = None, title: str = None, source_image: str = None) -> Dict[str, Any]:
         """
         Génère des posts en utilisant des prompts spécifiques pour chaque réseau
+        Les variables {titre}, {contenu}, {url} sont remplacées dynamiquement
         """
         generated_posts = {}
+        
+        # Préparer les données de l'article pour le remplacement des variables
+        article_data = {
+            'title': title or '',
+            'content': article_content.replace('Titre: ', '').split('\nContenu: ')[-1] if 'Contenu: ' in article_content else article_content,
+            'source_url': source_url or ''
+        }
         
         for network in target_networks:
             try:
                 # Récupérer le prompt spécifique pour ce réseau
                 network_prompt = network_prompts.get(network)
                 
-                # Ajouter instruction pour inclure le lien
-                if source_url and network_prompt:
-                    network_prompt += f"\n\nIMPORTANT : Inclure le lien {source_url} à la fin du post."
+                # DEBUG: Afficher le prompt AVANT remplacement
+                print(f"🔍 [LLM] Prompt pour {network} (avant remplacement): {network_prompt[:200] if network_prompt else 'AUCUN'}...")
                 
                 if not network_prompt:
                     # Si pas de prompt spécifique, utiliser un prompt par défaut
                     network_prompt = f"Crée un post pour {network} basé sur cet article."
+                
+                # Remplacer les variables dans le prompt
+                network_prompt = self._replace_variables(network_prompt, article_data)
+                
+                # DEBUG: Afficher le prompt APRÈS remplacement
+                print(f"🔍 [LLM] Prompt pour {network} (après remplacement): {network_prompt[:200]}...")
+                
+                # Ajouter instruction pour inclure le lien UNIQUEMENT si {url} n'a pas été utilisé dans le prompt
+                # Vérifier si le prompt contient déjà {url} ou si source_url n'est pas dans le prompt final
+                if source_url and network_prompt and '{url}' not in network_prompt and source_url not in network_prompt:
+                    network_prompt += f"\n\nIMPORTANT : Inclure le lien {source_url} à la fin du post."
                 
                 # Générer le post pour ce réseau spécifique
                 response = self._call_openai_with_retry(

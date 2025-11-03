@@ -697,6 +697,27 @@ export const networksService = {
 };
 
 // Services pour la file d'attente de publication
+export const auditService = {
+  getLogs: async (params = {}) => {
+    try {
+      const response = await api.get('/audit/', { params });
+      return response;
+    } catch (error) {
+      console.error('❌ Audit logs API error:', error);
+      throw error;
+    }
+  },
+  getSummary: async () => {
+    try {
+      const response = await api.get('/audit/summary');
+      return response;
+    } catch (error) {
+      console.error('❌ Audit summary API error:', error);
+      throw error;
+    }
+  },
+};
+
 export const publicationQueueService = {
   getQueue: async (filters = {}) => {
     try {

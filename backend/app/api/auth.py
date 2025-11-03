@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 from app.services.auth_service import AuthService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_client_info
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -26,12 +26,16 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+def login(user_credentials: UserLogin, request: Request, db: Session = Depends(get_db)):
     auth_service = AuthService(db)
+    
+    ip_address, user_agent = get_client_info(request)
     
     user = auth_service.authenticate_user(
         user_credentials.username, 
-        user_credentials.password
+        user_credentials.password,
+        ip_address=ip_address,
+        user_agent=user_agent
     )
     
     if not user:

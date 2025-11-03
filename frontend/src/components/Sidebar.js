@@ -10,7 +10,8 @@ import {
   FaChevronLeft,
   FaServer,
   FaCogs,
-  FaUsers
+  FaUsers,
+  FaClipboardList
 } from 'react-icons/fa';
 
 const Sidebar = ({ isOpen, onToggle }) => {
@@ -23,6 +24,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
     { path: '/system-status', icon: FaServer, label: 'Statut Système' },
     { path: '/prompts', icon: FaCogs, label: 'Prompts' },
     { path: '/users', icon: FaUsers, label: 'Utilisateurs' },
+    { path: '/audit-logs', icon: FaClipboardList, label: 'Logs d\'Audit' },
   ];
 
   return (

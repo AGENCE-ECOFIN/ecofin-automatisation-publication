@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.feed import FeedCreate, FeedUpdate, FeedResponse
 from app.services.feed_service import FeedService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_client_info
 from app.models.user import User
 from typing import List, Dict
 from pydantic import BaseModel
@@ -82,6 +82,7 @@ def update_feed(
 @router.delete("/{feed_id}")
 def delete_feed(
     feed_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -100,7 +101,8 @@ def delete_feed(
             detail="Vous n'avez pas le droit de supprimer ce flux"
         )
     
-    success = feed_service.delete_feed(feed_id)
+    ip_address, user_agent = get_client_info(request)
+    success = feed_service.delete_feed(feed_id, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

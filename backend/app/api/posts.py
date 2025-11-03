@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest, PostRejectRequest
 from app.schemas.publication import PublicationResponse
 from app.services.post_service import PostService
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_client_info
 from app.models.user import User
 from typing import List, Optional
 
@@ -14,11 +14,13 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 @router.post("/", response_model=PostResponse)
 def create_post(
     post: PostCreate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.create_post(post)
+    ip_address, user_agent = get_client_info(request)
+    return post_service.create_post(post, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
 
 
 @router.get("/drafts", response_model=List[PostResponse])
@@ -97,6 +99,7 @@ def get_post(
 def update_post(
     post_id: int,
     post_update: PostUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -108,7 +111,8 @@ def update_post(
             detail="Post non trouvé"
         )
     
-    return post_service.update_post(post_id, post_update)
+    ip_address, user_agent = get_client_info(request)
+    return post_service.update_post(post_id, post_update, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
 
 
 @router.post("/{post_id}/validate", response_model=PostResponse)
@@ -132,7 +136,8 @@ def validate_post(
 @router.post("/{post_id}/reject")
 def reject_post(
     post_id: int,
-    request: Optional[PostRejectRequest] = None,
+    request_body: Optional[PostRejectRequest] = None,
+    request: Request = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -148,11 +153,12 @@ def reject_post(
     # Permettre le rejet même si le post a des réseaux validés
     # Motif de rejet optionnel (pas nécessaire) - peut être None ou non fourni
     rejection_reason = None
-    if request is not None and hasattr(request, 'rejection_reason'):
-        rejection_reason = request.rejection_reason
+    if request_body is not None and hasattr(request_body, 'rejection_reason'):
+        rejection_reason = request_body.rejection_reason
     
-    # Marquer le post comme rejeté globalement
-    post_service.reject_post(post_id, current_user.id, rejection_reason)
+    # Marquer le post comme rejeté globalement (l'audit est fait dans reject_post)
+    ip_address, user_agent = get_client_info(request) if request else (None, None)
+    post_service.reject_post(post_id, current_user.id, rejection_reason, ip_address=ip_address, user_agent=user_agent)
     
     return {"message": "Post rejeté globalement avec succès (tous les réseaux rejetés et retirés de la queue)"}
 
@@ -256,13 +262,15 @@ def get_post(
 def validate_network(
     post_id: int,
     network: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Valider un réseau spécifique d'un post"""
     print(f"🌐 [API] Validation réseau {network} pour post {post_id} par user {current_user.id}")
     post_service = PostService(db)
-    post = post_service.validate_network(post_id, network, current_user.id)
+    ip_address, user_agent = get_client_info(request)
+    post = post_service.validate_network(post_id, network, current_user.id, ip_address=ip_address, user_agent=user_agent)
     if not post:
         print(f"❌ [API] Post {post_id} non trouvé")
         raise HTTPException(status_code=404, detail="Post non trouvé")
@@ -274,19 +282,23 @@ def validate_network(
 def reject_network(
     post_id: int,
     network: str,
-    request: NetworkValidationRequest,
+    request_body: NetworkValidationRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Rejeter un réseau spécifique d'un post"""
     print(f"🌐 [API] Rejet réseau {network} pour post {post_id} par user {current_user.id}")
-    print(f"🔍 [API] Raison de rejet: {request.rejection_reason}")
+    print(f"🔍 [API] Raison de rejet: {request_body.rejection_reason}")
     post_service = PostService(db)
+    ip_address, user_agent = get_client_info(request)
     post = post_service.reject_network(
         post_id, 
         network, 
         current_user.id, 
-        request.rejection_reason
+        request_body.rejection_reason,
+        ip_address=ip_address,
+        user_agent=user_agent
     )
     if not post:
         print(f"❌ [API] Post {post_id} non trouvé")
@@ -299,16 +311,20 @@ def reject_network(
 def restore_network(
     post_id: int,
     network: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Restaurer un réseau spécifique d'un post (remettre en brouillon)"""
     print(f"🌐 [API] Restauration réseau {network} pour post {post_id} par user {current_user.id}")
     post_service = PostService(db)
+    ip_address, user_agent = get_client_info(request)
     post = post_service.restore_network(
         post_id, 
         network, 
-        current_user.id
+        current_user.id,
+        ip_address=ip_address,
+        user_agent=user_agent
     )
     if not post:
         print(f"❌ [API] Post {post_id} non trouvé")

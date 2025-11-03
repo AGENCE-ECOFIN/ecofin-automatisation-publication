@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.models.feed import Feed
 from app.schemas.feed import FeedCreate, FeedUpdate
+from app.services.audit_service import AuditService
 from typing import List, Optional
 import feedparser
 from datetime import datetime
@@ -10,6 +11,7 @@ from app.services.llm_service import LLMService
 class FeedService:
     def __init__(self, db: Session):
         self.db = db
+        self.audit_service = AuditService(db)
 
     def create_feed(self, feed: FeedCreate, user_id: int) -> Feed:
         # Log pour debug
@@ -40,6 +42,22 @@ class FeedService:
         print(f"   id: {db_feed.id}")
         print(f"   social_pages APRÈS commit: {db_feed.social_pages}")
         print(f"   network_prompts APRÈS commit: {db_feed.network_prompts}")
+        
+        # Logger la création du feed
+        self.audit_service.log_action(
+            action="FEED_CREATE",
+            entity_type="feed",
+            user_id=user_id,
+            entity_id=db_feed.id,
+            description=f"Création du flux RSS '{db_feed.name}'",
+            metadata={
+                "feed_name": db_feed.name,
+                "feed_url": str(db_feed.url),
+                "target_networks": db_feed.target_networks
+            },
+            ip_address=None,
+            user_agent=None
+        )
         
         return db_feed
 
@@ -83,7 +101,7 @@ class FeedService:
         
         return db_feed
 
-    def delete_feed(self, feed_id: int) -> bool:
+    def delete_feed(self, feed_id: int, user_id: Optional[int] = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> bool:
         """Supprime un flux et tous les éléments associés en cascade"""
         db_feed = self.get_feed_by_id(feed_id)
         if not db_feed:
@@ -91,22 +109,25 @@ class FeedService:
         
         # Sauvegarder le nom du flux avant suppression
         feed_name = db_feed.name
+        feed_url = str(db_feed.url) if db_feed.url else None
+        
+        # Compter les éléments avant suppression pour l'audit
+        from app.models.post import Post
+        from app.models.publication_queue import PublicationQueue
+        from app.models.publication import Publication
+        
+        publications_count = self.db.query(Publication).filter(Publication.feed_id == feed_id).count()
+        queue_count = self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).count()
+        posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
         
         try:
-            # Importer les modèles nécessaires
-            from app.models.post import Post
-            from app.models.publication_queue import PublicationQueue
-            from app.models.publication import Publication
-            
             # 1. Supprimer toutes les publications associées (EN PREMIER car référencées)
-            publications_count = self.db.query(Publication).filter(Publication.feed_id == feed_id).count()
             if publications_count > 0:
                 # Utiliser synchronize_session=False pour forcer la suppression SQL
                 self.db.query(Publication).filter(Publication.feed_id == feed_id).delete(synchronize_session=False)
                 print(f"🗑️ Supprimé {publications_count} publication(s) associée(s) au flux #{feed_id}")
             
             # 2. Supprimer tous les éléments de la file d'attente associés
-            queue_count = self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).count()
             if queue_count > 0:
                 self.db.query(PublicationQueue).filter(PublicationQueue.feed_id == feed_id).delete(synchronize_session=False)
                 print(f"🗑️ Supprimé {queue_count} élément(s) de la file d'attente associé(s) au flux #{feed_id}")
@@ -177,7 +198,6 @@ class FeedService:
                 print(f"⚠️ Erreur lors du nettoyage du cache Redis (ignorée): {redis_error}")
             
             # 4. Supprimer tous les posts associés (draft, validated, rejected)
-            posts_count = self.db.query(Post).filter(Post.feed_id == feed_id).count()
             if posts_count > 0:
                 self.db.query(Post).filter(Post.feed_id == feed_id).delete(synchronize_session=False)
                 print(f"🗑️ Supprimé {posts_count} post(s) associé(s) au flux #{feed_id}")
@@ -190,6 +210,25 @@ class FeedService:
             self.db.commit()
             
             print(f"✅ Flux #{feed_id} '{feed_name}' supprimé avec succès (cascade)")
+            
+            # Logger la suppression du feed
+            self.audit_service.log_action(
+                action="FEED_DELETE",
+                entity_type="feed",
+                user_id=user_id,
+                entity_id=feed_id,
+                description=f"Suppression du flux RSS '{feed_name}'",
+                metadata={
+                    "feed_name": feed_name,
+                    "feed_url": feed_url,
+                    "publications_count": publications_count,
+                    "queue_count": queue_count,
+                    "posts_count": posts_count
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            
             return True
             
         except Exception as e:
@@ -434,7 +473,10 @@ class FeedService:
             article_content=article_content,
             custom_prompt=feed.custom_prompt,
             network_prompts=feed.network_prompts,
-            target_networks=target_networks
+            target_networks=target_networks,
+            source_url=article.get('source_url'),
+            title=article.get('title'),
+            source_image=article.get('source_image')
         )
         
         return {

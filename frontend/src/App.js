@@ -12,6 +12,7 @@ import Prompts from './pages/Prompts';
 import UnifiedPublication from './pages/UnifiedPublication';
 import TestConnection from './pages/TestConnection';
 import UserManagement from './pages/UserManagement';
+import AuditLogs from './pages/AuditLogs';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -49,6 +50,7 @@ function App() {
                <Route path="prompts" element={<Prompts />} />
                <Route path="publications" element={<UnifiedPublication />} />
                <Route path="users" element={<UserManagement />} />
+               <Route path="audit-logs" element={<AuditLogs />} />
       </Route>
     </Routes>
   );

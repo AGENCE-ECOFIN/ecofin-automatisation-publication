@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 from app.core.database import get_db
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_client_info
+from app.services.audit_service import AuditService
 from app.models.user import User
 from app.models.network_config import NetworkConfig
 from app.schemas.network_config import NetworkConfigResponse, NetworkConfigCreate, NetworkConfigUpdate
@@ -62,6 +63,7 @@ def create_network(
 def update_network(
     network_id: int,
     network_data: NetworkConfigUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -73,14 +75,41 @@ def update_network(
             detail="Configuration réseau non trouvée"
         )
     
+    # Sauvegarder les anciennes valeurs pour l'audit
+    old_values = {
+        "network": network.network,
+        "default_publication_delay": network.default_publication_delay,
+        "is_active": network.is_active
+    }
+    
     # Mettre à jour uniquement les champs fournis et non-None
     update_data = network_data.model_dump(exclude_unset=True)
+    modified_fields = list(update_data.keys())
     for field, value in update_data.items():
         if value is not None:  # Ne mettre à jour que si la valeur n'est pas None
             setattr(network, field, value)
     
     db.commit()
     db.refresh(network)
+    
+    # Logger la mise à jour de la config réseau
+    ip_address, user_agent = get_client_info(request)
+    audit_service = AuditService(db)
+    audit_service.log_action(
+        action="CONFIG_UPDATE",
+        entity_type="network_config",
+        user_id=current_user.id,
+        entity_id=network_id,
+        description=f"Modification de la configuration réseau '{network.network}'",
+        metadata={
+            "network": network.network,
+            "modified_fields": modified_fields,
+            "old_values": old_values,
+            "new_values": {field: getattr(network, field, None) for field in modified_fields}
+        },
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
     
     return network
 

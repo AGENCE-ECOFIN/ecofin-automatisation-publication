@@ -56,7 +56,10 @@ def test_generate_posts(
             article_content=article_content,
             custom_prompt=request.custom_prompt,
             network_prompts=request.network_prompts,
-            target_networks=target_networks
+            target_networks=target_networks,
+            source_url=request.source_url,
+            title=request.title,
+            source_image=None
         )
         
         return TestArticleResponse(
@@ -159,7 +162,10 @@ def generate_direct_content(
             article_content=request.content,
             custom_prompt=request.custom_prompt,
             network_prompts=None,
-            target_networks=[request.network]
+            target_networks=[request.network],
+            source_url=None,
+            title=None,
+            source_image=None
         )
         
         # Récupérer le contenu généré pour le réseau

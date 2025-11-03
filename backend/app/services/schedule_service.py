@@ -6,11 +6,13 @@ from datetime import datetime, time, timedelta
 from sqlalchemy.orm import Session
 from app.models.schedule_config import ScheduleConfig
 from app.schemas.schedule_config import ScheduleConfigCreate, ScheduleConfigUpdate
+from app.services.audit_service import AuditService
 
 
 class ScheduleService:
     def __init__(self, db: Session):
         self.db = db
+        self.audit_service = AuditService(db)
 
     def create_schedule_config(self, config: ScheduleConfigCreate) -> ScheduleConfig:
         """Créer une nouvelle configuration d'horaires"""
@@ -37,18 +39,46 @@ class ScheduleService:
         """Récupérer une configuration par ID"""
         return self.db.query(ScheduleConfig).filter(ScheduleConfig.id == config_id).first()
 
-    def update_schedule_config(self, config_id: int, config_update: ScheduleConfigUpdate) -> Optional[ScheduleConfig]:
+    def update_schedule_config(self, config_id: int, config_update: ScheduleConfigUpdate, user_id: Optional[int] = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Optional[ScheduleConfig]:
         """Mettre à jour une configuration d'horaires"""
         db_config = self.get_schedule_config_by_id(config_id)
         if not db_config:
             return None
 
+        # Sauvegarder les anciennes valeurs pour l'audit
+        old_values = {
+            "network": db_config.network,
+            "start_time": str(db_config.start_time) if db_config.start_time else None,
+            "end_time": str(db_config.end_time) if db_config.end_time else None,
+            "is_active": db_config.is_active
+        }
+
         update_data = config_update.dict(exclude_unset=True)
+        modified_fields = list(update_data.keys())
         for field, value in update_data.items():
             setattr(db_config, field, value)
 
         self.db.commit()
         self.db.refresh(db_config)
+        
+        # Logger la mise à jour de la config horaire
+        if user_id:
+            self.audit_service.log_action(
+                action="CONFIG_UPDATE",
+                entity_type="schedule_config",
+                user_id=user_id,
+                entity_id=config_id,
+                description=f"Modification de la configuration horaire pour '{db_config.network}'",
+                metadata={
+                    "network": db_config.network,
+                    "modified_fields": modified_fields,
+                    "old_values": old_values,
+                    "new_values": {field: str(getattr(db_config, field, None)) if hasattr(db_config, field) else None for field in modified_fields}
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+        
         return db_config
 
     def delete_schedule_config(self, config_id: int) -> bool:
@@ -145,7 +175,7 @@ class ScheduleService:
 
         return "Maintenant"
     
-    def bulk_update_schedules(self, network: str, configs_data: List[Dict]) -> List[ScheduleConfig]:
+    def bulk_update_schedules(self, network: str, configs_data: List[Dict], user_id: Optional[int] = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> List[ScheduleConfig]:
         """Mettre à jour en masse les horaires d'un réseau et recalculer les posts"""
         # Delete existing configs for the network
         self.db.query(ScheduleConfig).filter(ScheduleConfig.network == network).delete()
@@ -170,6 +200,23 @@ class ScheduleService:
         
         # 🔄 REPROGRAMMER AUTOMATIQUEMENT les posts qui sont maintenant hors horaires
         self._recalculate_posts_schedule(network)
+        
+        # Logger la mise à jour en masse
+        if user_id:
+            self.audit_service.log_action(
+                action="CONFIG_UPDATE",
+                entity_type="schedule_config",
+                user_id=user_id,
+                entity_id=None,  # Mise à jour en masse, pas d'ID spécifique
+                description=f"Mise à jour en masse des configurations horaires pour '{network}'",
+                metadata={
+                    "network": network,
+                    "configs_count": len(new_configs),
+                    "configs": [{"id": config.id, "start_time": str(config.start_time), "end_time": str(config.end_time)} for config in new_configs]
+                },
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
         
         return new_configs
     

@@ -1,12 +1,30 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.services.auth_service import AuthService
-from typing import Optional
+from typing import Optional, Tuple
 
 security = HTTPBearer()
+
+
+def get_client_info(request: Request) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Récupère l'adresse IP et le user agent depuis la requête
+    
+    Returns:
+        Tuple (ip_address, user_agent)
+    """
+    # Récupérer l'IP (gérer les proxies)
+    ip_address = request.client.host if request.client else None
+    if "x-forwarded-for" in request.headers:
+        ip_address = request.headers["x-forwarded-for"].split(",")[0].strip()
+    
+    # Récupérer le user agent
+    user_agent = request.headers.get("user-agent")
+    
+    return ip_address, user_agent
 
 
 def get_current_user(

@@ -2,11 +2,12 @@
 API endpoints pour la gestion des horaires de publication
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.api.auth import get_current_user
+from app.api.dependencies import get_client_info
 from app.services.schedule_service import ScheduleService
 from app.schemas.schedule_config import (
     ScheduleConfigCreate, 
@@ -60,12 +61,14 @@ def get_schedule_config(
 def update_schedule_config(
     config_id: int,
     config_update: ScheduleConfigUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Mettre à jour une configuration d'horaires"""
     schedule_service = ScheduleService(db)
-    config = schedule_service.update_schedule_config(config_id, config_update)
+    ip_address, user_agent = get_client_info(request)
+    config = schedule_service.update_schedule_config(config_id, config_update, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
     if not config:
         raise HTTPException(status_code=404, detail="Configuration non trouvée")
     return config
@@ -88,14 +91,16 @@ def delete_schedule_config(
 @router.post("/bulk-update", response_model=List[ScheduleConfigResponse])
 def bulk_update_schedule_configs(
     bulk_update: ScheduleConfigBulkUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Mettre à jour plusieurs configurations en une fois"""
     schedule_service = ScheduleService(db)
+    ip_address, user_agent = get_client_info(request)
     
     # Utiliser la nouvelle méthode qui gère la reprogrammation automatique
-    created_configs = schedule_service.bulk_update_schedules(bulk_update.network, bulk_update.configs)
+    created_configs = schedule_service.bulk_update_schedules(bulk_update.network, bulk_update.configs, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
     
     return created_configs
 

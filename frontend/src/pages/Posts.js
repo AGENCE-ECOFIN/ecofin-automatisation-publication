@@ -193,7 +193,13 @@ const Posts = () => {
   };
 
   const handleSaveNetworkContent = (postId, network, content) => {
-    const updatedContent = { ...generatedContent, [network]: content };
+    // Utiliser le contenu actuel du post pour éviter la perte des autres réseaux
+    // Si le post sélectionné existe, utiliser son generated_content, sinon utiliser l'état local
+    const currentPost = selectedPost || safeDrafts.find(p => p.id === postId) || 
+                        safeValidated.find(p => p.id === postId) || 
+                        safeRejected.find(p => p.id === postId);
+    const currentContent = currentPost?.generated_content || generatedContent || {};
+    const updatedContent = { ...currentContent, [network]: content };
     setGeneratedContent(updatedContent);
     saveMutation.mutate({ 
       id: postId, 

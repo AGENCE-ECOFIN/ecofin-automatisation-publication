@@ -56,13 +56,19 @@ def fetch_and_process_feed(feed_id: int):
                 if article.get('source_url'):
                     article_content_with_link += f"\n\nLien de l'article: {article['source_url']}"
                 
+                # DEBUG: Afficher les prompts du feed
+                print(f"🔍 [TASKS] Feed #{feed_id} '{feed.name}' - network_prompts: {feed.network_prompts}")
+                print(f"🔍 [TASKS] Target networks: {target_networks}")
+                
                 # Générer les posts pour tous les réseaux définis en utilisant les prompts spécifiques
                 generated_content = llm_service.generate_social_media_posts(
                     article_content=article_content_with_link,
                     custom_prompt=feed.custom_prompt,
                     network_prompts=feed.network_prompts,
                     target_networks=target_networks,
-                    source_url=article.get('source_url')  # Passer le lien séparément aussi
+                    source_url=article.get('source_url'),  # Passer le lien séparément aussi
+                    title=article.get('title'),  # Passer le titre pour les variables
+                    source_image=article.get('source_image')  # Passer l'image (non utilisé dans variables mais disponible)
                 )
                 
                 # Créer le post

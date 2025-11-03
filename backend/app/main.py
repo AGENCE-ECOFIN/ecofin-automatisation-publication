@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-from app.api import auth, feeds, posts, test_generation, tasks, networks, users, upload, schedule
+from app.api import auth, feeds, posts, test_generation, tasks, networks, users, upload, schedule, audit
 from app.api import publication_queue as publication_queue_api
 from app.api import unified_publication, blotato_accounts, direct_post, minio_test, x_accounts
 from fastapi.staticfiles import StaticFiles
@@ -66,6 +66,7 @@ app.include_router(direct_post.router, tags=["direct-post"])
 app.include_router(upload.router, tags=["upload"])
 app.include_router(schedule.router, prefix="/schedule", tags=["schedule"])
 app.include_router(minio_test.router, prefix="/minio", tags=["minio"])
+app.include_router(audit.router, tags=["audit"])
 
 
 @app.get("/")

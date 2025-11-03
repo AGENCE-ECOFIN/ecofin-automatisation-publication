@@ -380,10 +380,6 @@ const Prompts = () => {
                         <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-mono">{'{url}'}</code>
                         <span className="text-sm text-blue-700">URL de l'article</span>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <code className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-mono">{'{image}'}</code>
-                        <span className="text-sm text-blue-700">Image de l'article</span>
-                      </div>
                     </div>
                   </div>
                 </div>
