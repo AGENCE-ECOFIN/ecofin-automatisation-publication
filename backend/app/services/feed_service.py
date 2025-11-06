@@ -74,7 +74,18 @@ class FeedService:
         return query.all()
 
     def get_feed_by_id(self, feed_id: int) -> Optional[Feed]:
-        return self.db.query(Feed).filter(Feed.id == feed_id).first()
+        feed = self.db.query(Feed).filter(Feed.id == feed_id).first()
+        if feed:
+            # Debug: Vérifier que les prompts sont bien chargés depuis la BDD
+            print(f"🔍 [FEED_SERVICE] Feed #{feed_id} récupéré:")
+            print(f"   network_prompts type: {type(feed.network_prompts)}")
+            print(f"   network_prompts valeur: {feed.network_prompts}")
+            print(f"   network_prompts est None: {feed.network_prompts is None}")
+            if feed.network_prompts:
+                print(f"   network_prompts contient: {list(feed.network_prompts.keys())}")
+                for network, prompt in feed.network_prompts.items():
+                    print(f"   - {network}: {prompt[:50] if prompt else 'VIDE'}...")
+        return feed
 
     def update_feed(self, feed_id: int, feed_update: FeedUpdate) -> Optional[Feed]:
         db_feed = self.get_feed_by_id(feed_id)
@@ -87,10 +98,20 @@ class FeedService:
         print(f"\n🔍 DEBUG UPDATE FEED #{feed_id}:")
         print(f"   Données reçues: {update_data}")
         print(f"   social_pages AVANT: {db_feed.social_pages}")
+        print(f"   network_prompts AVANT: {db_feed.network_prompts}")
+        
+        # Colonnes JSON qui nécessitent flag_modified
+        json_fields = ['network_prompts', 'target_networks', 'publication_timing', 'social_pages']
         
         for field, value in update_data.items():
             print(f"   Mise à jour {field}: {value}")
             setattr(db_feed, field, value)
+            
+            # Forcer la mise à jour pour les colonnes JSON
+            if field in json_fields:
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(db_feed, field)
+                print(f"   ✅ flag_modified appliqué pour {field}")
 
         self.db.commit()
         self.db.refresh(db_feed)

@@ -516,10 +516,50 @@ class PostService:
             if existing_queue_posts:
                 # Il y a des posts en file d'attente → appliquer le délai cumulatif
                 last_scheduled = existing_queue_posts[0]  # Le plus récent
-                scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
-                print(f"🔄 DÉLAI CUMULATIF: {len(existing_queue_posts)} post(s) en file pour feed #{post.feed_id} sur {network}")
-                print(f"   → Dernier post programmé: {last_scheduled.scheduled_at.strftime('%H:%M')}")
-                print(f"   → Nouveau post: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min)")
+                
+                # Vérifier si le dernier post programmé est dans le passé (déjà publié ou en retard)
+                if last_scheduled.scheduled_at < now:
+                    # Le dernier post est dans le passé → vérifier le dernier post publié à la place
+                    from app.models.publication import Publication
+                    last_published = self.db.query(Publication).filter(
+                        Publication.feed_id == post.feed_id,
+                        Publication.network == network,
+                        Publication.is_success == True,
+                        Publication.published_at.isnot(None)
+                    ).order_by(Publication.published_at.desc()).limit(1).first()
+                    
+                    if last_published and last_published.published_at:
+                        time_since_last = now - last_published.published_at
+                        if time_since_last >= timedelta(minutes=delay_minutes):
+                            # Délai dépassé depuis le dernier publié → publication immédiate (ajustée aux horaires)
+                            scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                            print(f"⚠️ [QUEUE] Dernier post programmé dans le passé, délai dépassé → immédiat: {scheduled_at.strftime('%H:%M')}")
+                        else:
+                            # Délai restant depuis le dernier publié → programmer à fin du délai
+                            scheduled_at = schedule_service._adjust_time_to_schedule(
+                                network,
+                                last_published.published_at + timedelta(minutes=delay_minutes)
+                            )
+                            remaining = int(((timedelta(minutes=delay_minutes) - time_since_last).total_seconds()) // 60)
+                            print(f"⚠️ [QUEUE] Dernier post programmé dans le passé, délai en cours (reste ~{remaining}min) → {scheduled_at.strftime('%H:%M')}")
+                    else:
+                        # Aucun post publié → publication immédiate
+                        scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                        print(f"⚠️ [QUEUE] Dernier post programmé dans le passé, aucun publié → immédiat: {scheduled_at.strftime('%H:%M')}")
+                else:
+                    # Le dernier post programmé est dans le futur → appliquer le délai cumulatif normalement
+                    # Calculer l'heure avec délai cumulatif
+                    base_scheduled_at = last_scheduled.scheduled_at + timedelta(minutes=delay_minutes)
+                    # Ajuster aux horaires (comme dans les autres cas)
+                    scheduled_at = schedule_service._adjust_time_to_schedule(network, base_scheduled_at)
+                    # Vérifier que le scheduled_at n'est pas dans le passé (après ajustement horaires)
+                    if scheduled_at < now:
+                        # Si dans le passé après ajustement, programmer pour maintenant (ajusté aux horaires)
+                        scheduled_at = schedule_service._adjust_time_to_schedule(network, now)
+                        print(f"⚠️ [QUEUE] Heure calculée dans le passé après ajustement, ajustée à maintenant")
+                    print(f"🔄 DÉLAI CUMULATIF: {len(existing_queue_posts)} post(s) en file pour feed #{post.feed_id} sur {network}")
+                    print(f"   → Dernier post programmé: {last_scheduled.scheduled_at.strftime('%H:%M')}")
+                    print(f"   → Nouveau post: {scheduled_at.strftime('%H:%M')} (après {delay_minutes}min + ajustement horaires)")
             else:
                 # File d'attente vide → vérifier le dernier post publié pour décider immédiat ou délai restant
                 # Optimisation : utiliser limit(1) et seulement les colonnes nécessaires
@@ -564,6 +604,20 @@ class PostService:
                 print(f"⚠️ [QUEUE] Post #{post.id} déjà en queue pour {network}")
                 return
             
+            # Déterminer le statut selon l'heure programmée et les horaires (comme dans _schedule_validated_post)
+            config = schedule_service.get_active_config_for_network_now(network)
+            if config and config.is_active:
+                if config.is_time_in_range(scheduled_at.hour, scheduled_at.minute):
+                    status = "SCHEDULED"  # Programmé dans les horaires
+                else:
+                    status = "WAITING_HOURS"  # En attente d'horaires
+            else:
+                # Pas de config horaire, vérifier si c'est dans les 5 prochaines minutes
+                if scheduled_at <= now + timedelta(minutes=5):
+                    status = "PENDING"
+                else:
+                    status = "SCHEDULED"
+            
             # Créer l'entrée dans la queue
             queue_entry = PublicationQueue(
                 post_id=post.id,
@@ -573,7 +627,7 @@ class PostService:
                 content=generated_content[network],
                 media_urls=[post.source_image] if post.source_image else [],
                 scheduled_at=scheduled_at,
-                status='SCHEDULED'
+                status=status
             )
             
             self.db.add(queue_entry)

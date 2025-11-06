@@ -138,8 +138,13 @@ def update_feed_prompts(
     
     # Mettre à jour les prompts
     feed.network_prompts = prompts_update.network_prompts
+    # Forcer la mise à jour pour la colonne JSON
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(feed, 'network_prompts')
     db.commit()
     db.refresh(feed)
+    
+    print(f"✅ Prompts mis à jour pour feed #{feed_id}: {feed.network_prompts}")
     
     return feed
 

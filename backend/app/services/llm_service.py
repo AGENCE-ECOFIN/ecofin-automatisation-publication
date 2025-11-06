@@ -1,4 +1,5 @@
 import openai
+import re
 from app.core.config import settings
 from typing import Dict, Any, List, Optional
 
@@ -34,11 +35,19 @@ class LLMService:
             print(f"🔍 [LLM] Détail des prompts: {network_prompts}")
         
         # Si des prompts spécifiques par réseau sont fournis, les utiliser
-        if network_prompts and any(network_prompts.values()):
+        # Vérifier que network_prompts existe et contient au moins une valeur non vide
+        has_specific_prompts = network_prompts and any(
+            prompt and prompt.strip() for prompt in network_prompts.values()
+        )
+        
+        if has_specific_prompts:
             print(f"✅ [LLM] Utilisation des prompts spécifiques par réseau")
+            print(f"🔍 [LLM] Prompts disponibles: {list(network_prompts.keys())}")
             return self._generate_posts_with_specific_prompts(article_content, network_prompts, target_networks, source_url, title, source_image)
         else:
-            print(f"⚠️ [LLM] Pas de prompts spécifiques, utilisation du prompt général")
+            print(f"⚠️ [LLM] Pas de prompts spécifiques valides, utilisation du prompt général")
+            if network_prompts:
+                print(f"🔍 [LLM] network_prompts existe mais est vide ou contient seulement des chaînes vides")
         
         # Sinon, utiliser le prompt général
         networks_description = ", ".join(target_networks).title()
@@ -91,6 +100,7 @@ class LLMService:
         """
         Remplace les variables dans le prompt par leurs valeurs réelles
         Variables disponibles: {titre}, {contenu}, {url}
+        Si une variable n'est pas disponible (None ou vide), elle est retirée du prompt
         """
         if not prompt:
             return prompt
@@ -98,11 +108,25 @@ class LLMService:
         result = prompt
         for var_name, var_key in self.VARIABLES_MAPPING.items():
             value = article_data.get(var_key, '')
-            # Convertir en string et gérer les valeurs None
-            value_str = str(value) if value is not None else ''
-            result = result.replace(var_name, value_str)
+            
+            # Si la variable existe dans le prompt
+            if var_name in result:
+                # Si la valeur est disponible (non None et non vide)
+                if value and str(value).strip():
+                    # Remplacer la variable par sa valeur
+                    value_str = str(value).strip()
+                    result = result.replace(var_name, value_str)
+                else:
+                    # Retirer la variable du prompt si elle n'est pas disponible
+                    # Retirer la variable et nettoyer les espaces autour
+                    result = result.replace(var_name, '')
+                    # Nettoyer les espaces multiples et les retours à la ligne multiples
+                    import re
+                    result = re.sub(r'\s+', ' ', result)  # Remplacer espaces multiples par un seul
+                    result = re.sub(r'\n\s*\n+', '\n\n', result)  # Remplacer retours à la ligne multiples par deux max
+                    print(f"🔍 [LLM] Variable {var_name} non disponible, retirée du prompt")
         
-        return result
+        return result.strip()
     
     def _generate_posts_with_specific_prompts(self, article_content: str, network_prompts: Dict[str, str], target_networks: List[str], source_url: str = None, title: str = None, source_image: str = None) -> Dict[str, Any]:
         """
@@ -138,8 +162,8 @@ class LLMService:
                 
                 # Ajouter instruction pour inclure le lien UNIQUEMENT si {url} n'a pas été utilisé dans le prompt
                 # Vérifier si le prompt contient déjà {url} ou si source_url n'est pas dans le prompt final
-                if source_url and network_prompt and '{url}' not in network_prompt and source_url not in network_prompt:
-                    network_prompt += f"\n\nIMPORTANT : Inclure le lien {source_url} à la fin du post."
+              #  if source_url and network_prompt and '{url}' not in network_prompt and source_url not in network_prompt:
+               #     network_prompt += f"\n\nIMPORTANT : Inclure le lien {source_url} à la fin du post."
                 
                 # Générer le post pour ce réseau spécifique
                 response = self._call_openai_with_retry(
