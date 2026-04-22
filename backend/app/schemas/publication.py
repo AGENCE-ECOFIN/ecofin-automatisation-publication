@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -24,6 +24,14 @@ class PublicationResponse(PublicationBase):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedPublicationsResponse(BaseModel):
+    items: List[PublicationResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 

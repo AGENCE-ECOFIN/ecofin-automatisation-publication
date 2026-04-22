@@ -1,64 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from 'react-query';
 import { FaCheck, FaTimes, FaExternalLinkAlt, FaCalendarAlt } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { publicationQueueService, postsService, feedsService } from '../services/api';
+import { postsService, feedsService, DEFAULT_PAGE_SIZE } from '../services/api';
+import Pagination from '../components/Pagination';
 import { cleanHtmlContent } from '../utils/htmlUtils';
 import SocialNetworkIcon from '../components/SocialNetworkIcon';
 
 const History = () => {
+  const [page, setPage] = useState(1);
   const [networkFilter, setNetworkFilter] = useState('');
   const [feedFilter, setFeedFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  
-  // Récupérer l'historique complet depuis la table publications
-  const { data: historyData = [], isLoading, error } = useQuery('history', () => postsService.getHistory(100));
-  
-  // Récupérer les feeds pour les filtres
-  const { data: feedsData } = useQuery('feeds', postsService.getFeeds);
-  const feeds = feedsData?.data || [];
-  
-  // S'assurer que allHistory est un tableau
-  const allHistory = Array.isArray(historyData?.data) 
-    ? historyData.data 
-    : Array.isArray(historyData) 
-      ? historyData 
-      : [];
-  
-  // Appliquer les filtres
-  const history = allHistory.filter(item => {
-    if (networkFilter && item.network !== networkFilter) return false;
-    if (feedFilter) {
-      // Gérer le filtre "direct" pour les posts directs
-      if (feedFilter === 'direct') {
-        if (item.post_id !== null) return false;
-      } else if (item.post_id === null || item.feed_id !== parseInt(feedFilter)) {
-        return false;
-      }
-    }
-    if (statusFilter) {
-      // Mapper le statut is_success vers PUBLISHED/FAILED
-      const itemStatus = item.is_success ? 'PUBLISHED' : 'FAILED';
-      if (itemStatus !== statusFilter) return false;
-    }
-    return true;
-  });
 
-  // Debug logs détaillés
-  console.log('🔍 History Debug COMPLET:', {
-    'historyData raw': historyData,
-    'historyData.data': historyData?.data,
-    'allHistory length': allHistory.length,
-    'allHistory': allHistory,
-    'filteredHistory length': history.length,
-    'filteredHistory': history,
-    isLoading,
-    error: error,
-    'networkFilter': networkFilter,
-    'feedFilter': feedFilter,
-    'statusFilter': statusFilter
-  });
+  const { data: historyResult, isLoading, error } = useQuery(
+    ['history', page, networkFilter, feedFilter, statusFilter],
+    () =>
+      postsService.getHistory({
+        page,
+        pageSize: DEFAULT_PAGE_SIZE,
+        network: networkFilter || undefined,
+        feed: feedFilter || undefined,
+        pubStatus: statusFilter || undefined,
+      }),
+    { keepPreviousData: true }
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [networkFilter, feedFilter, statusFilter]);
+
+  const { data: feedsData } = useQuery(
+    'feeds-for-history',
+    () => feedsService.getFeeds({ page: 1, pageSize: 200 })
+  );
+  const feeds = feedsData?.data || [];
+
+  const history = Array.isArray(historyResult?.data) ? historyResult.data : [];
+  const historyMeta = historyResult?.pagination || {};
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -138,16 +118,19 @@ const History = () => {
             </div>
           </div>
           
-          {/* Statistiques */}
-          <div className="mt-4 flex items-center space-x-6 text-sm text-gray-600">
+          {/* Statistiques : total = résultats correspondant aux filtres (toutes pages) */}
+          <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
             <span className="font-medium">
-              Total : <strong className="text-gray-900">{history.length}</strong>
+              Résultats (filtres appliqués) : <strong className="text-gray-900">{historyMeta.total ?? '—'}</strong>
             </span>
             <span>
-              Publiés : <strong className="text-green-600">{allHistory.filter(i => i.is_success).length}</strong>
+              Sur cette page : <strong className="text-gray-900">{history.length}</strong>
             </span>
             <span>
-              Échecs : <strong className="text-red-600">{allHistory.filter(i => !i.is_success).length}</strong>
+              Publiés : <strong className="text-green-600">{history.filter(i => i.is_success).length}</strong>
+            </span>
+            <span>
+              Échecs : <strong className="text-red-600">{history.filter(i => !i.is_success).length}</strong>
             </span>
           </div>
         </div>
@@ -260,6 +243,7 @@ const History = () => {
                 </div>
               ))}
             </div>
+            <Pagination meta={historyMeta} onPageChange={setPage} />
           </div>
         )}
       </div>

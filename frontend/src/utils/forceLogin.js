@@ -42,7 +42,8 @@ export const testConnection = async () => {
     });
     
     if (response.ok) {
-      const feeds = await response.json();
+      const feedsPayload = await response.json();
+      const feeds = Array.isArray(feedsPayload?.items) ? feedsPayload.items : feedsPayload;
       console.log('✅ Connexion testée:', feeds.length, 'flux trouvés');
       return { success: true, feeds };
     } else {

@@ -121,3 +121,11 @@ class ScheduleStatusResponse(BaseModel):
     current_config: Optional[ScheduleConfigResponse]
     next_available_time: Optional[str]
     reason: str
+
+
+class PaginatedScheduleConfigResponse(BaseModel):
+    items: List[ScheduleConfigResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

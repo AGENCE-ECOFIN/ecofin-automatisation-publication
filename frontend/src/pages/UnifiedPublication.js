@@ -4,9 +4,10 @@ import { FaClock, FaPlay, FaPause, FaCheck, FaTimes, FaPlus, FaGlobe, FaImage, F
 import { FaFacebook, FaLinkedin, FaTwitter } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { postsService, publicationQueueService, networksService, feedsService, api } from '../services/api';
+import { postsService, publicationQueueService, networksService, feedsService, api, DEFAULT_PAGE_SIZE } from '../services/api';
 import SocialNetworkIcon from '../components/SocialNetworkIcon';
 import ScheduleConfigModal from '../components/ScheduleConfigModal';
+import Pagination from '../components/Pagination';
 
 const UnifiedPublication = () => {
   const [activeTab, setActiveTab] = useState('queue');
@@ -18,6 +19,7 @@ const UnifiedPublication = () => {
   const [feedFilter, setFeedFilter] = useState('');
   const [networkFilter, setNetworkFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [queuePage, setQueuePage] = useState(1);
   const [, forceUpdate] = useState();
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
@@ -101,21 +103,34 @@ const UnifiedPublication = () => {
 
 
 
-  // Récupération de la file d'attente de publication
-  const { data: queueData } = useQuery('publication-queue', () => 
-    publicationQueueService.getQueue()
+  useEffect(() => {
+    setQueuePage(1);
+  }, [feedFilter, networkFilter, statusFilter]);
+
+  // File d'attente : filtres + pagination côté serveur
+  const { data: queueData } = useQuery(
+    ['publication-queue', queuePage, feedFilter, networkFilter, statusFilter],
+    () =>
+      publicationQueueService.getQueue(
+        {
+          network: networkFilter || undefined,
+          feed: feedFilter || undefined,
+          queue_filter: statusFilter || undefined,
+        },
+        { page: queuePage, pageSize: DEFAULT_PAGE_SIZE }
+      ),
+    { keepPreviousData: true }
   );
-  
-  // Récupération des posts directs (immédiats et programmés)
-  const { data: directPostsData } = useQuery('direct-posts', () => 
+
+  const { data: directPostsData } = useQuery('direct-posts', () =>
     postsService.getDirect()
   );
-  
+
   const queueItems = queueData?.data || [];
+  const queueMeta = queueData?.pagination || {};
   const directPosts = directPostsData?.data || [];
-  
-  // Filtrer les posts directs immédiats de la file d'attente
-  const scheduledQueueItems = queueItems.filter(item => !item.is_immediate);
+
+  const scheduledQueueItems = queueItems.filter((item) => !item.is_immediate);
   
   // Debug pour voir les données (réduit)
   // console.log('🔍 Queue Items Debug:', queueItems);
@@ -128,7 +143,9 @@ const UnifiedPublication = () => {
   // console.log('🔍 Networks Debug:', { networks, count: networks.length });
 
   // Récupération des flux pour les filtres
-  const { data: feedsData } = useQuery('feeds', feedsService.getFeeds);
+  const { data: feedsData } = useQuery('unified-publication-feeds', () =>
+    feedsService.getFeeds({ page: 1, pageSize: 500 })
+  );
   const feeds = feedsData?.data || [];
 
   // Fonction helper pour obtenir le nom du flux
@@ -246,9 +263,7 @@ const UnifiedPublication = () => {
 
 
   const handlePauseAll = () => {
-    // Pause uniquement les éléments filtrés
-    const filteredItems = getFilteredQueueItems();
-    const itemsToPause = filteredItems.filter(item => item.status === 'PENDING' && !item.is_paused);
+    const itemsToPause = scheduledQueueItems.filter(item => item.status === 'PENDING' && !item.is_paused);
     
     if (itemsToPause.length === 0) {
       alert('Aucun élément à mettre en pause dans le filtre actuel');
@@ -263,9 +278,7 @@ const UnifiedPublication = () => {
   };
 
   const handleResumeAll = () => {
-    // Reprendre uniquement les éléments filtrés
-    const filteredItems = getFilteredQueueItems();
-    const itemsToResume = filteredItems.filter(item => item.status === 'PENDING' && item.is_paused);
+    const itemsToResume = scheduledQueueItems.filter(item => item.status === 'PENDING' && item.is_paused);
     
     if (itemsToResume.length === 0) {
       alert('Aucun élément en pause dans le filtre actuel');
@@ -277,44 +290,6 @@ const UnifiedPublication = () => {
         resumeItemMutation.mutate(item.id);
       });
     }
-  };
-
-  // Fonction de filtrage des éléments de la file d'attente
-  const getFilteredQueueItems = () => {
-    // Utiliser seulement les posts programmés (exclure les posts directs immédiats)
-    const allItems = [...scheduledQueueItems];
-    
-    return allItems.filter(item => {
-      // Filtre par flux
-      if (feedFilter) {
-        if (feedFilter === 'direct') {
-          // Afficher uniquement les posts directs (feed_id NULL)
-          if (item.feed_id !== null) return false;
-        } else {
-          // Afficher uniquement ce flux spécifique
-          if (item.feed_id !== parseInt(feedFilter)) return false;
-        }
-      }
-      
-      // Filtre par réseau
-      if (networkFilter && item.network !== networkFilter) {
-        return false;
-      }
-      
-      // Filtre par statut
-      if (statusFilter) {
-        if (statusFilter === 'PAUSED' && !item.is_paused) return false;
-        if (statusFilter === 'SCHEDULED' && item.status !== 'SCHEDULED') return false;
-        if (statusFilter === 'WAITING_HOURS' && item.status !== 'WAITING_HOURS') return false;
-        if (statusFilter === 'PENDING' && item.status !== 'PENDING') return false;
-        if (statusFilter === 'PUBLISHING' && item.status !== 'PUBLISHING') return false;
-        if (statusFilter === 'PUBLISHED' && item.status !== 'PUBLISHED') return false;
-        if (statusFilter === 'FAILED' && item.status !== 'FAILED') return false;
-        if (statusFilter === 'CANCELLED' && item.status !== 'CANCELLED') return false;
-      }
-      
-      return true;
-    });
   };
 
   const getStatusIcon = (status) => {
@@ -700,7 +675,7 @@ const UnifiedPublication = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {getFilteredQueueItems().map((item) => {
+              {scheduledQueueItems.map((item) => {
                 return (
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors duration-150">
                   <td className="px-3 sm:px-6 py-4">
@@ -822,9 +797,14 @@ const UnifiedPublication = () => {
             </tbody>
           </table>
         </div>
+        {queueMeta.total > 0 && (
+          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+            <Pagination meta={queueMeta} onPageChange={setQueuePage} />
+          </div>
+        )}
       </div>
 
-      {queueItems.length === 0 && (
+      {scheduledQueueItems.length === 0 && (
         <div className="text-center py-12 bg-white rounded-lg shadow">
           <FaClock className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun élément dans la file d'attente</h3>

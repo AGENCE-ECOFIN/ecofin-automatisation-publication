@@ -1,12 +1,14 @@
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, func
 from app.models.post import Post
+from app.models.feed import Feed
 from app.models.publication import Publication
 from app.models.publication_queue import PublicationQueue
 from app.models.network_config import NetworkConfig
 from app.schemas.post import PostCreate, PostUpdate, PostValidate
 from app.services.audit_service import AuditService
-from typing import List, Optional
-from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Tuple
+from datetime import datetime, timezone, timedelta, date
 
 
 class PostService:
@@ -49,6 +51,49 @@ class PostService:
         if feed_id:
             query = query.filter(Post.feed_id == feed_id)
         return query.order_by(Post.created_at.desc()).all()
+
+    def get_posts_paginated(
+        self,
+        status: Optional[str] = None,
+        feed_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 50,
+        search: Optional[str] = None,
+        source: Optional[str] = None,
+        created_on: Optional[date] = None,
+    ) -> Tuple[List[Post], int]:
+        query = self.db.query(Post).options(joinedload(Post.feed))
+        if status:
+            query = query.filter(Post.status == status)
+        if feed_id is not None:
+            query = query.filter(Post.feed_id == feed_id)
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            query = query.filter(or_(Post.title.ilike(term), Post.content.ilike(term)))
+        if source and source.strip():
+            term = f"%{source.strip()}%"
+            query = query.outerjoin(Feed, Post.feed_id == Feed.id)
+            query = query.filter(
+                or_(Post.source_url.ilike(term), Feed.name.ilike(term))
+            )
+        if created_on is not None:
+            query = query.filter(func.date(Post.created_at) == created_on)
+
+        total = query.count()
+        items = query.order_by(Post.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
+
+    def list_source_filter_hints(self, limit: int = 500) -> List[str]:
+        """Noms des flux RSS enregistrés dans Flux (table `feeds`), pour le filtre Source."""
+        rows = (
+            self.db.query(Feed.name)
+            .filter(Feed.name.isnot(None), Feed.name != "")
+            .distinct()
+            .order_by(Feed.name)
+            .limit(limit)
+            .all()
+        )
+        return [r[0].strip() for r in rows if r[0] and r[0].strip()]
 
     def get_direct_posts(self) -> List[dict]:
         """Récupérer les posts directs depuis la publication_queue ET l'historique"""
@@ -160,6 +205,13 @@ class PostService:
         result.sort(key=lambda x: x['created_at'], reverse=True)
         
         return result
+
+    def get_direct_posts_paginated(self, page: int = 1, page_size: int = 50) -> Tuple[List[dict], int]:
+        result = self.get_direct_posts()
+        total = len(result)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return result[start:end], total
 
     def get_post_by_id(self, post_id: int) -> Optional[Post]:
         return self.db.query(Post).options(joinedload(Post.feed)).filter(Post.id == post_id).first()
@@ -1021,6 +1073,30 @@ class PostService:
         
         return posts
 
+    def get_posts_queue_paginated(self, page: int = 1, page_size: int = 50) -> Tuple[List[Post], int]:
+        from app.models.publication_queue import PublicationQueue
+
+        queue_feed_ids = self.db.query(PublicationQueue.feed_id).filter(
+            PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+        ).distinct().all()
+
+        feed_ids = [feed_id[0] for feed_id in queue_feed_ids if feed_id[0] is not None]
+        if not feed_ids:
+            return [], 0
+
+        base_query = self.db.query(Post).options(joinedload(Post.feed)).filter(Post.feed_id.in_(feed_ids))
+        total = base_query.count()
+        posts = base_query.order_by(Post.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+        for post in posts:
+            queue_items = self.db.query(PublicationQueue).filter(
+                PublicationQueue.feed_id == post.feed_id,
+                PublicationQueue.status.in_(['SCHEDULED', 'WAITING_HOURS', 'PENDING', 'PUBLISHING'])
+            ).all()
+            post.queue_items = queue_items
+
+        return posts, total
+
     def mark_post_published(self, post_id: int) -> Optional[Post]:
         db_post = self.get_post_by_id(post_id)
         if not db_post:
@@ -1047,6 +1123,43 @@ class PostService:
 
     def get_publication_history(self, limit: int = 100) -> List[Publication]:
         return self.db.query(Publication).order_by(Publication.published_at.desc()).limit(limit).all()
+
+    def get_publication_history_paginated(
+        self,
+        page: int = 1,
+        page_size: int = 100,
+        network: Optional[str] = None,
+        feed: Optional[str] = None,
+        pub_status: Optional[str] = None,
+    ) -> Tuple[List[Publication], int]:
+        query = self.db.query(Publication)
+        if network:
+            query = query.filter(Publication.network == network)
+        if pub_status == "PUBLISHED":
+            query = query.filter(Publication.is_success.is_(True))
+        elif pub_status == "FAILED":
+            query = query.filter(Publication.is_success.is_(False))
+        if feed:
+            if feed == "direct":
+                query = query.filter(Publication.post_id.is_(None))
+            else:
+                try:
+                    fid = int(feed)
+                    query = query.filter(
+                        Publication.feed_id == fid,
+                        Publication.post_id.isnot(None),
+                    )
+                except ValueError:
+                    pass
+
+        total = query.count()
+        items = (
+            query.order_by(Publication.published_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return items, total
 
     def reject_post(self, post_id: int, user_id: int, rejection_reason: str = None, ip_address: Optional[str] = None, user_agent: Optional[str] = None) -> Post:
         """Rejeter un post globalement (rejette tous les réseaux et retire de la queue)"""

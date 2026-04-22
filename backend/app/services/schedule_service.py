@@ -1,7 +1,7 @@
 """
 Service pour la gestion des horaires de publication
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime, time, timedelta
 from sqlalchemy.orm import Session
 from app.models.schedule_config import ScheduleConfig
@@ -34,6 +34,19 @@ class ScheduleService:
         if network:
             query = query.filter(ScheduleConfig.network == network)
         return query.order_by(ScheduleConfig.network, ScheduleConfig.day_type).all()
+
+    def get_schedule_configs_paginated(
+        self,
+        network: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> Tuple[List[ScheduleConfig], int]:
+        query = self.db.query(ScheduleConfig)
+        if network:
+            query = query.filter(ScheduleConfig.network == network)
+        total = query.count()
+        items = query.order_by(ScheduleConfig.network, ScheduleConfig.day_type).offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
 
     def get_schedule_config_by_id(self, config_id: int) -> Optional[ScheduleConfig]:
         """Récupérer une configuration par ID"""

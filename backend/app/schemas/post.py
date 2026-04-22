@@ -76,3 +76,25 @@ class PostQueue(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class SourceHintsResponse(BaseModel):
+    """Noms des flux RSS enregistrés (page Flux)."""
+
+    sources: List[str]
+
+
+class PaginatedPostsResponse(BaseModel):
+    items: List[PostResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class PaginatedDirectPostsResponse(BaseModel):
+    items: List[dict]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

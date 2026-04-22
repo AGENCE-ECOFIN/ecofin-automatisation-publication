@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.feed import FeedCreate, FeedUpdate, FeedResponse
+from app.schemas.feed import FeedCreate, FeedUpdate, FeedResponse, PaginatedFeedsResponse
 from app.services.feed_service import FeedService
 from app.api.dependencies import get_current_user, get_client_info
 from app.models.user import User
@@ -25,8 +25,10 @@ def create_feed(
     return feed_service.create_feed(feed, current_user.id)
 
 
-@router.get("/", response_model=List[FeedResponse])
+@router.get("/", response_model=PaginatedFeedsResponse)
 def get_feeds(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -35,7 +37,8 @@ def get_feeds(
     Partage global des flux entre tous les utilisateurs
     """
     feed_service = FeedService(db)
-    return feed_service.get_feeds()  # Pas de filtre par user_id
+    items, total = feed_service.get_feeds_paginated(page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
 @router.get("/{feed_id}", response_model=FeedResponse)

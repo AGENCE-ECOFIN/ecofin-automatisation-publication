@@ -3,11 +3,13 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { FaPlus, FaEdit, FaTrash, FaClock, FaCheck, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { feedsService } from '../services/api';
+import { feedsService, DEFAULT_PAGE_SIZE } from '../services/api';
 import FeedCreationModal from '../components/FeedCreationModal';
 import FeedEditModal from '../components/FeedEditModal';
+import Pagination from '../components/Pagination';
 
 const Feeds = () => {
+  const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreationModalOpen, setIsCreationModalOpen] = useState(false);
   const [editingFeed, setEditingFeed] = useState(null);
@@ -36,10 +38,14 @@ const Feeds = () => {
 
   const queryClient = useQueryClient();
 
-  const { data: feedsData = [], isLoading, error } = useQuery('feeds', feedsService.getFeeds);
-  
-  // S'assurer que feeds est un tableau
+  const { data: feedsData = [], isLoading, error } = useQuery(
+    ['feeds', page],
+    () => feedsService.getFeeds({ page, pageSize: DEFAULT_PAGE_SIZE }),
+    { keepPreviousData: true }
+  );
+
   const feeds = Array.isArray(feedsData?.data) ? feedsData.data : Array.isArray(feedsData) ? feedsData : [];
+  const feedsMeta = feedsData?.pagination || {};
   
   console.log('🔍 Feeds Debug:', {
     feedsData,
@@ -51,7 +57,7 @@ const Feeds = () => {
 
   const createFeedMutation = useMutation(feedsService.createFeed, {
     onSuccess: () => {
-      queryClient.invalidateQueries('feeds');
+      queryClient.invalidateQueries(['feeds']);
       setIsModalOpen(false);
       resetForm();
     },
@@ -59,7 +65,7 @@ const Feeds = () => {
 
   const updateFeedMutation = useMutation(({ id, data }) => feedsService.updateFeed(id, data), {
     onSuccess: () => {
-      queryClient.invalidateQueries('feeds');
+      queryClient.invalidateQueries(['feeds']);
       setIsModalOpen(false);
       setEditingFeed(null);
       resetForm();
@@ -68,7 +74,7 @@ const Feeds = () => {
 
   const deleteFeedMutation = useMutation(feedsService.deleteFeed, {
     onSuccess: () => {
-      queryClient.invalidateQueries('feeds');
+      queryClient.invalidateQueries(['feeds']);
     },
   });
 
@@ -393,6 +399,8 @@ const Feeds = () => {
                 );
               })}
             </div>
+
+            <Pagination meta={feedsMeta} onPageChange={setPage} />
           </div>
         )}
 

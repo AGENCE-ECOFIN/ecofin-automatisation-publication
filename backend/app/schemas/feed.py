@@ -56,3 +56,11 @@ class FeedResponse(FeedBase):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedFeedsResponse(BaseModel):
+    items: List[FeedResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

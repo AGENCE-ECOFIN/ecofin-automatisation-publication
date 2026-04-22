@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { DEFAULT_PAGE_SIZE } from '../constants/pagination';
+import { log } from '../utils/logger';
 import { 
   mockUser, 
   mockFeeds, 
@@ -8,6 +10,8 @@ import {
   delay, 
   shouldSimulateError 
 } from './mockData';
+
+export { DEFAULT_PAGE_SIZE };
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 const USE_MOCK_DATA = false; // Désactivé pour utiliser l'API réelle
@@ -45,6 +49,24 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+const buildLegacyListResponse = (response, items = [], pagination = null) => ({
+  ...response,
+  data: items,
+  pagination
+});
+
+const fetchPaginatedPage = async (url, params = {}, page = 1, pageSize = DEFAULT_PAGE_SIZE) => {
+  const response = await api.get(url, {
+    params: {
+      ...params,
+      page,
+      page_size: pageSize
+    }
+  });
+  const payload = response.data || {};
+  return buildLegacyListResponse(response, payload.items || [], payload);
+};
 
 // Services API
 export const authService = {
@@ -85,7 +107,7 @@ export const authService = {
 };
 
 export const feedsService = {
-         getFeeds: async () => {
+         getFeeds: async (options = {}) => {
            if (USE_MOCK_DATA) {
              await delay(600);
              if (shouldSimulateError()) {
@@ -94,8 +116,8 @@ export const feedsService = {
              return { data: mockFeeds };
            }
            try {
-             const response = await api.get('/feeds');
-             return response;
+             const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+             return await fetchPaginatedPage('/feeds', {}, page, pageSize);
            } catch (error) {
              console.error('❌ Erreur API getFeeds:', error);
              throw error;
@@ -202,9 +224,8 @@ export const feedsService = {
 };
 
 export const postsService = {
-        getDrafts: async () => {
+        getDrafts: async (options = {}) => {
           if (USE_MOCK_DATA) {
-            console.log('🔧 Using mock data for drafts');
             await delay(500);
             if (shouldSimulateError()) {
               throw new Error('Erreur de récupération des brouillons simulée');
@@ -212,16 +233,19 @@ export const postsService = {
             return { data: mockDrafts };
           }
           try {
-            const response = await api.get('/posts/drafts');
-            return response;
+            const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, source, createdDate } = options;
+            const params = {};
+            if (search) params.search = search;
+            if (source) params.source = source;
+            if (createdDate) params.created_date = createdDate;
+            return await fetchPaginatedPage('/posts/drafts', params, page, pageSize);
           } catch (error) {
-            console.error('❌ Drafts API error:', error);
+            log.error('api:drafts', 'Échec chargement brouillons', { message: error?.message });
             throw error;
           }
         },
-  getValidated: async () => {
+  getValidated: async (options = {}) => {
     if (USE_MOCK_DATA) {
-      console.log('🔧 Using mock data for validated');
       await delay(500);
       if (shouldSimulateError()) {
         throw new Error('Erreur de récupération des posts validés simulée');
@@ -229,14 +253,31 @@ export const postsService = {
       return { data: mockQueue };
     }
           try {
-            const response = await api.get('/posts/validated');
-            return response;
+            const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, source, createdDate } = options;
+            const params = {};
+            if (search) params.search = search;
+            if (source) params.source = source;
+            if (createdDate) params.created_date = createdDate;
+            return await fetchPaginatedPage('/posts/validated', params, page, pageSize);
     } catch (error) {
-      console.error('❌ Validated API error:', error);
+      log.error('api:validated', 'Échec chargement posts validés', { message: error?.message });
       throw error;
     }
   },
-  getQueue: async () => {
+  getSourceHints: async (options = {}) => {
+    if (USE_MOCK_DATA) {
+      return { data: { sources: [] } };
+    }
+    try {
+      const { limit = 500 } = options;
+      const response = await api.get('/posts/meta/source-hints', { params: { limit } });
+      return { data: response.data };
+    } catch (error) {
+      log.error('api:source-hints', 'Échec suggestions source', { message: error?.message });
+      throw error;
+    }
+  },
+  getQueue: async (options = {}) => {
     if (USE_MOCK_DATA) {
       console.log('🔧 Using mock data for queue');
       await delay(500);
@@ -245,13 +286,13 @@ export const postsService = {
       }
       return { data: mockQueue };
     }
-    console.log('🔧 Fetching real queue from API...');
     try {
-      const response = await api.get('/publication-queue/');
-      console.log('✅ Queue API response:', response.data?.length || 0, 'items');
+      const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+      const response = await fetchPaginatedPage('/publication-queue/', {}, page, pageSize);
+      log.debug('api:queue', 'File chargée', { count: response.data?.length ?? 0, page });
       return response;
     } catch (error) {
-      console.error('❌ Queue API error:', error);
+      log.error('api:queue', 'Échec chargement file', { message: error?.message });
       throw error;
     }
   },
@@ -343,26 +384,40 @@ export const postsService = {
     }
     return api.post(`/posts/${id}/publish-now`);
   },
-         getHistory: async (limit = 100) => {
+         getHistory: async (options = {}) => {
            if (USE_MOCK_DATA) {
-             console.log('🔧 Using mock data for history');
              await delay(600);
              if (shouldSimulateError()) {
                throw new Error('Erreur de récupération de l\'historique simulée');
              }
+             const limit = options.limit ?? 100;
              return { data: mockHistory.slice(0, limit) };
            }
-           console.log('🔧 Fetching real history from API...');
            try {
-             const response = await api.get(`/posts/history/publications?limit=${limit}`);
-             console.log('✅ History API response:', response.data?.length || 0, 'publications');
+             const {
+               page = 1,
+               pageSize = DEFAULT_PAGE_SIZE,
+               network,
+               feed,
+               pubStatus,
+             } = options;
+             const params = {};
+             if (network) params.network = network;
+             if (feed) params.feed = feed;
+             if (pubStatus) params.pub_status = pubStatus;
+             const response = await fetchPaginatedPage('/posts/history/publications', params, page, pageSize);
+             log.debug('api:history', 'Historique publications', {
+               count: response.data?.length ?? 0,
+               page,
+               filters: { network, feed, pubStatus },
+             });
              return response;
            } catch (error) {
-             console.error('❌ History API error:', error);
+             log.error('api:history', 'Échec chargement historique', { message: error?.message });
              throw error;
            }
          },
-         getRejected: async () => {
+         getRejected: async (options = {}) => {
            if (USE_MOCK_DATA) {
              console.log('🔧 Using mock data for rejected');
              await delay(500);
@@ -372,10 +427,14 @@ export const postsService = {
              return { data: [] };
            }
           try {
-            const response = await api.get('/posts/rejected');
-            return response;
+            const { page = 1, pageSize = DEFAULT_PAGE_SIZE, search, source, createdDate } = options;
+            const params = {};
+            if (search) params.search = search;
+            if (source) params.source = source;
+            if (createdDate) params.created_date = createdDate;
+            return await fetchPaginatedPage('/posts/rejected', params, page, pageSize);
            } catch (error) {
-             console.error('❌ Rejected API error:', error);
+             log.error('api:rejected', 'Échec chargement rejetés', { message: error?.message });
              throw error;
            }
          },
@@ -402,7 +461,7 @@ export const postsService = {
            }
            return api.post(`/posts/${id}/restore`);
          },
-         getDirect: async () => {
+         getDirect: async (options = {}) => {
            if (USE_MOCK_DATA) {
              console.log('🔧 Using mock data for direct posts');
              await delay(500);
@@ -412,14 +471,14 @@ export const postsService = {
              return { data: [] };
            }
           try {
-            const response = await api.get('/posts/direct');
-            return response;
+            const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+            return await fetchPaginatedPage('/posts/direct', {}, page, pageSize);
            } catch (error) {
              console.error('❌ Direct posts API error:', error);
              throw error;
            }
          },
-         getDirectPosts: async () => {
+         getDirectPosts: async (options = {}) => {
            if (USE_MOCK_DATA) {
              console.log('🔧 Using mock data for direct posts (immediate)');
              await delay(500);
@@ -429,8 +488,8 @@ export const postsService = {
              return { data: [] };
            }
           try {
-            const response = await api.get('/posts/direct');
-            return response;
+            const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+            return await fetchPaginatedPage('/posts/direct', {}, page, pageSize);
            } catch (error) {
              console.error('❌ Direct posts (immediate) API error:', error);
              throw error;
@@ -481,7 +540,7 @@ export const postsService = {
 };
 
 export const usersService = {
-  getUsers: async () => {
+  getUsers: async (options = {}) => {
     if (USE_MOCK_DATA) {
       console.log('🔧 Using mock data for users');
       await delay(500);
@@ -509,7 +568,8 @@ export const usersService = {
     }
     console.log('🔧 Fetching real users from API...');
     try {
-      const response = await api.get('/users/');
+      const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+      const response = await fetchPaginatedPage('/users/', {}, page, pageSize);
       console.log('✅ Users API response:', response.data);
       return response;
     } catch (error) {
@@ -719,17 +779,32 @@ export const auditService = {
 };
 
 export const publicationQueueService = {
-  getQueue: async (filters = {}) => {
+  getQueue: async (filters = {}, options = {}) => {
     try {
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
-      if (filters.network) params.append('network', filters.network);
-      if (filters.feed_id) params.append('feed_id', filters.feed_id);
-      
-      const response = await api.get(`/publication-queue/?${params.toString()}`);
-      return response;
+      const params = {};
+      if (filters.network) params.network = filters.network;
+      if (filters.feed === 'direct') {
+        params.feed = 'direct';
+      } else if (filters.feed) {
+        params.feed = String(filters.feed);
+      } else if (filters.feed_id != null) {
+        params.feed_id = filters.feed_id;
+      }
+      if (filters.queue_filter) {
+        params.queue_filter = filters.queue_filter;
+      } else if (filters.status) {
+        params.queue_filter = filters.status;
+      }
+      const { page = 1, pageSize = DEFAULT_PAGE_SIZE } = options;
+      const res = await fetchPaginatedPage('/publication-queue/', params, page, pageSize);
+      log.debug('api:publication-queue', 'File paginée', {
+        page,
+        total: res.pagination?.total,
+        filters: params,
+      });
+      return res;
     } catch (error) {
-      console.error('❌ Get publication queue error:', error);
+      log.error('api:publication-queue', 'Échec chargement file', { message: error?.message });
       throw error;
     }
   },

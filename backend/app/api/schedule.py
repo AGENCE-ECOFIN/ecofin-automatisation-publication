@@ -14,7 +14,8 @@ from app.schemas.schedule_config import (
     ScheduleConfigUpdate, 
     ScheduleConfigResponse,
     ScheduleConfigBulkUpdate,
-    ScheduleStatusResponse
+    ScheduleStatusResponse,
+    PaginatedScheduleConfigResponse
 )
 
 router = APIRouter()
@@ -31,16 +32,18 @@ def create_schedule_config(
     return schedule_service.create_schedule_config(config)
 
 
-@router.get("/", response_model=List[ScheduleConfigResponse])
+@router.get("/", response_model=PaginatedScheduleConfigResponse)
 def get_schedule_configs(
     network: Optional[str] = Query(None, description="Filtrer par réseau"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Récupérer toutes les configurations d'horaires"""
     schedule_service = ScheduleService(db)
-    configs = schedule_service.get_schedule_configs(network)
-    return configs
+    items, total = schedule_service.get_schedule_configs_paginated(network=network, page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
 @router.get("/{config_id}", response_model=ScheduleConfigResponse)

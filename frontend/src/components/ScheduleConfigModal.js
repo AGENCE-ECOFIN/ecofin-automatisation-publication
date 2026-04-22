@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FaTimes, FaSave, FaClock } from 'react-icons/fa';
 import { api } from '../services/api';
 
@@ -14,26 +14,20 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
     is_active: true
   });
   const [loading, setLoading] = useState(false);
-  const [hasExistingConfigs, setHasExistingConfigs] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && network) {
-      fetchScheduleConfig();
-    }
-  }, [isOpen, network]);
-
-  const fetchScheduleConfig = async () => {
+  const fetchScheduleConfig = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get(`/schedule/?network=${network}`);
+      const configs = response.data?.items || [];
       console.log('📊 Configurations chargées:', response.data);
       
       // Séparer les configurations semaine et week-end
       let weekdayFound = false;
       let weekendFound = false;
       
-      if (response.data && response.data.length > 0) {
-        response.data.forEach(config => {
+      if (configs.length > 0) {
+        configs.forEach(config => {
           if (config.day_type === 'weekday') {
             setWeekdayConfig({
               start_time: config.start_time,
@@ -69,13 +63,18 @@ const ScheduleConfigModal = ({ isOpen, onClose, network, onSave }) => {
         });
       }
       
-      setHasExistingConfigs(weekdayFound || weekendFound);
     } catch (error) {
       console.error('Erreur lors du chargement des horaires:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [network]);
+
+  useEffect(() => {
+    if (isOpen && network) {
+      fetchScheduleConfig();
+    }
+  }, [isOpen, network, fetchScheduleConfig]);
 
   const handleSave = async () => {
     try {

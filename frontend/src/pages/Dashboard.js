@@ -4,26 +4,41 @@ import { useNavigate } from 'react-router-dom';
 import { FaRss, FaFileAlt, FaClock, FaHistory, FaCheck, FaTimes, FaSync } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { feedsService, postsService, publicationQueueService } from '../services/api';
+import { feedsService, postsService, publicationQueueService, DEFAULT_PAGE_SIZE } from '../services/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: feedsData = [], isLoading: feedsLoading } = useQuery('feeds', feedsService.getFeeds, {
-    refetchInterval: 10000, // Rafraîchir toutes les 10 secondes
-    refetchIntervalInBackground: true
-  });
-  const { data: draftsData = [], isLoading: draftsLoading } = useQuery('drafts', postsService.getDrafts, {
-    refetchInterval: 10000, // Rafraîchir toutes les 10 secondes
-    refetchIntervalInBackground: true
-  });
-  const { data: validatedData = [], isLoading: validatedLoading } = useQuery('validated', postsService.getValidated, {
-    refetchInterval: 10000, // Rafraîchir toutes les 10 secondes
-    refetchIntervalInBackground: true
-  });
-  const { data: queueData = [], isLoading: queueLoading, refetch: refetchQueue } = useQuery('publication-queue', publicationQueueService.getQueue, {
+  const { data: feedsData = [], isLoading: feedsLoading } = useQuery(
+    ['feeds', 'dashboard'],
+    () => feedsService.getFeeds({ page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    {
+      refetchInterval: 10000,
+      refetchIntervalInBackground: true
+    }
+  );
+  const { data: draftsData = [], isLoading: draftsLoading } = useQuery(
+    ['drafts', 'dashboard'],
+    () => postsService.getDrafts({ page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    {
+      refetchInterval: 10000,
+      refetchIntervalInBackground: true
+    }
+  );
+  const { data: validatedData = [], isLoading: validatedLoading } = useQuery(
+    ['validated', 'dashboard'],
+    () => postsService.getValidated({ page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    {
+      refetchInterval: 10000,
+      refetchIntervalInBackground: true
+    }
+  );
+  const { data: queueData = [], isLoading: queueLoading, refetch: refetchQueue } = useQuery(
+    ['publication-queue', 'dashboard'],
+    () => publicationQueueService.getQueue({}, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    {
     refetchInterval: 3000, // Rafraîchir toutes les 3 secondes
     refetchIntervalInBackground: true,
     staleTime: 0, // Toujours considérer les données comme périmées
@@ -38,16 +53,21 @@ const Dashboard = () => {
       setIsRefreshing(true);
     }
   });
-  const { data: publishedData = [], isLoading: historyLoading } = useQuery('dashboard-history', () => 
-    publicationQueueService.getQueue({ status: 'PUBLISHED' })
+  const { data: publishedData = [], isLoading: historyLoading } = useQuery(
+    'dashboard-history',
+    () => publicationQueueService.getQueue({ status: 'PUBLISHED' }, { page: 1, pageSize: DEFAULT_PAGE_SIZE })
   );
 
-  // S'assurer que toutes les données sont des tableaux
   const feeds = Array.isArray(feedsData?.data) ? feedsData.data : Array.isArray(feedsData) ? feedsData : [];
   const drafts = Array.isArray(draftsData?.data) ? draftsData.data : Array.isArray(draftsData) ? draftsData : [];
   const validated = Array.isArray(validatedData?.data) ? validatedData.data : Array.isArray(validatedData) ? validatedData : [];
   const queue = Array.isArray(queueData?.data) ? queueData.data : Array.isArray(queueData) ? queueData : [];
   const history = Array.isArray(publishedData?.data) ? publishedData.data : Array.isArray(publishedData) ? publishedData : [];
+
+  const feedsTotal = feedsData?.pagination?.total ?? feeds.length;
+  const draftsTotal = draftsData?.pagination?.total ?? drafts.length;
+  const validatedTotal = validatedData?.pagination?.total ?? validated.length;
+  const queueTotal = queueData?.pagination?.total ?? queue.length;
 
 
   // Calculer le temps restant
@@ -62,7 +82,7 @@ const Dashboard = () => {
 
   // Statistiques détaillées de la file d'attente
   const queueStats = {
-    total: queue?.length || 0,
+    total: queueTotal,
     scheduled: queue?.filter(item => {
       if (item.status !== 'PENDING' || item.is_paused) return false;
       const timeInfo = getTimeRemaining(item.scheduled_at);
@@ -82,28 +102,28 @@ const Dashboard = () => {
   const stats = [
     {
       name: 'Flux RSS',
-      value: feeds?.length || 0,
+      value: feedsTotal,
       icon: FaRss,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100'
     },
     {
       name: 'Posts Brouillons',
-      value: drafts?.length || 0,
+      value: draftsTotal,
       icon: FaFileAlt,
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-100'
     },
     {
       name: 'Posts Validés',
-      value: validated?.length || 0,
+      value: validatedTotal,
       icon: FaCheck,
       color: 'text-green-600',
       bgColor: 'bg-green-100'
     },
     {
       name: 'File d\'attente',
-      value: queue?.length || 0,
+      value: queueTotal,
       icon: FaClock,
       color: 'text-purple-600',
       bgColor: 'bg-purple-100'

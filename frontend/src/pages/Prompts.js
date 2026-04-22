@@ -7,7 +7,10 @@ const Prompts = () => {
   const queryClient = useQueryClient();
   
   // Récupérer les flux RSS
-  const { data: feedsData = [], isLoading: feedsLoading, error: feedsError } = useQuery('feeds', feedsService.getFeeds);
+  const { data: feedsData = [], isLoading: feedsLoading, error: feedsError } = useQuery(
+    ['feeds', 'prompts-list'],
+    () => feedsService.getFeeds({ page: 1, pageSize: 200 })
+  );
   
   // S'assurer que feeds est un tableau
   const feeds = Array.isArray(feedsData?.data) ? feedsData.data : Array.isArray(feedsData) ? feedsData : [];
@@ -67,7 +70,7 @@ const Prompts = () => {
     ({ feedId, networkPrompts }) => feedsService.updateFeedPrompts(feedId, networkPrompts),
     {
       onSuccess: (data) => {
-        queryClient.invalidateQueries('feeds');
+        queryClient.invalidateQueries(['feeds']);
         // Mettre à jour l'état local immédiatement
         if (selectedFeed && selectedFeed.id === data.data.id) {
           setSelectedFeed(data.data);

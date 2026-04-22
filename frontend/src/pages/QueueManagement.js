@@ -1,24 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { FaClock, FaPlay, FaPause, FaCheck, FaTimes, FaPlus, FaGlobe, FaEdit } from 'react-icons/fa';
-import { publicationQueueService, postsService } from '../services/api';
+import { publicationQueueService, feedsService, DEFAULT_PAGE_SIZE } from '../services/api';
+import Pagination from '../components/Pagination';
 
 const QueueManagement = () => {
   const [feedFilter, setFeedFilter] = useState('');
   const [networkFilter, setNetworkFilter] = useState('');
+  const [page, setPage] = useState(1);
   const [showGlobalConfig, setShowGlobalConfig] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
 
   const queryClient = useQueryClient();
 
-  // Récupération de la file d'attente
-  const { data: queueData, isLoading: queueLoading } = useQuery('publication-queue', () => 
-    publicationQueueService.getQueue()
+  useEffect(() => {
+    setPage(1);
+  }, [feedFilter, networkFilter]);
+
+  const { data: queueData, isLoading: queueLoading } = useQuery(
+    ['publication-queue-qm', page, feedFilter, networkFilter],
+    () =>
+      publicationQueueService.getQueue(
+        {
+          network: networkFilter || undefined,
+          feed: feedFilter || undefined,
+        },
+        { page, pageSize: DEFAULT_PAGE_SIZE }
+      ),
+    { keepPreviousData: true }
   );
   const queueItems = queueData?.data || [];
+  const queueMeta = queueData?.pagination || {};
 
   // Récupération des flux pour les filtres
-  const { data: feedsData } = useQuery('feeds', () => postsService.getFeeds());
+  const { data: feedsData } = useQuery('queue-management-feeds', () =>
+    feedsService.getFeeds({ page: 1, pageSize: 500 })
+  );
   const feeds = feedsData?.data || [];
 
   // Mutations pour les actions individuelles
@@ -65,23 +82,6 @@ const QueueManagement = () => {
     }
   );
 
-  // Fonction de filtrage
-  const getFilteredQueueItems = () => {
-    return queueItems.filter(item => {
-      // Filtre par flux
-      if (feedFilter && item.feed_id !== parseInt(feedFilter)) {
-        return false;
-      }
-      
-      // Filtre par réseau
-      if (networkFilter && item.network !== networkFilter) {
-        return false;
-      }
-      
-      return true;
-    });
-  };
-
   // Gestion des sélections
   const handleSelectItem = (itemId) => {
     setSelectedItems(prev => 
@@ -92,11 +92,10 @@ const QueueManagement = () => {
   };
 
   const handleSelectAll = () => {
-    const filteredItems = getFilteredQueueItems();
     setSelectedItems(
-      selectedItems.length === filteredItems.length 
-        ? [] 
-        : filteredItems.map(item => item.id)
+      selectedItems.length === queueItems.length
+        ? []
+        : queueItems.map((item) => item.id)
     );
   };
 
@@ -188,8 +187,6 @@ const QueueManagement = () => {
     }
   };
 
-  const filteredItems = getFilteredQueueItems();
-
   if (queueLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -218,26 +215,26 @@ const QueueManagement = () => {
         {/* Statistiques */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-2xl font-bold text-gray-900">{queueItems.length}</div>
-            <div className="text-sm text-gray-600">Total</div>
+            <div className="text-2xl font-bold text-gray-900">{queueMeta.total ?? queueItems.length}</div>
+            <div className="text-sm text-gray-600">Total (filtres)</div>
           </div>
-          <div className="text-center p-3 bg-yellow-50 rounded-lg">
+          <div className="text-center p-3 bg-yellow-50 rounded-lg" title="Répartition sur la page courante">
             <div className="text-2xl font-bold text-yellow-600">{queueItems.filter(item => item.status === 'PENDING').length}</div>
             <div className="text-sm text-yellow-600">En attente</div>
           </div>
-          <div className="text-center p-3 bg-blue-50 rounded-lg">
+          <div className="text-center p-3 bg-blue-50 rounded-lg" title="Répartition sur la page courante">
             <div className="text-2xl font-bold text-blue-600">{queueItems.filter(item => item.status === 'SCHEDULED').length}</div>
             <div className="text-sm text-blue-600">Programmés</div>
           </div>
-          <div className="text-center p-3 bg-indigo-50 rounded-lg">
+          <div className="text-center p-3 bg-indigo-50 rounded-lg" title="Répartition sur la page courante">
             <div className="text-2xl font-bold text-indigo-600">{queueItems.filter(item => item.status === 'PUBLISHING').length}</div>
             <div className="text-sm text-indigo-600">En cours</div>
           </div>
-          <div className="text-center p-3 bg-green-50 rounded-lg">
+          <div className="text-center p-3 bg-green-50 rounded-lg" title="Répartition sur la page courante">
             <div className="text-2xl font-bold text-green-600">{queueItems.filter(item => item.status === 'PUBLISHED').length}</div>
             <div className="text-sm text-green-600">Publiés</div>
           </div>
-          <div className="text-center p-3 bg-red-50 rounded-lg">
+          <div className="text-center p-3 bg-red-50 rounded-lg" title="Répartition sur la page courante">
             <div className="text-2xl font-bold text-red-600">{queueItems.filter(item => item.status === 'FAILED').length}</div>
             <div className="text-sm text-red-600">Échecs</div>
           </div>
@@ -256,7 +253,8 @@ const QueueManagement = () => {
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
               >
                 <option value="">Tous les flux</option>
-                {feeds.map(feed => (
+                <option value="direct">Posts directs</option>
+                {feeds.map((feed) => (
                   <option key={feed.id} value={feed.id}>{feed.name}</option>
                 ))}
               </select>
@@ -282,6 +280,7 @@ const QueueManagement = () => {
                 onClick={() => {
                   setFeedFilter('');
                   setNetworkFilter('');
+                  setPage(1);
                 }}
                 className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
               >
@@ -337,7 +336,7 @@ const QueueManagement = () => {
                 <th className="px-6 py-3 text-left">
                   <input
                     type="checkbox"
-                    checked={selectedItems.length === filteredItems.length && filteredItems.length > 0}
+                    checked={selectedItems.length === queueItems.length && queueItems.length > 0}
                     onChange={handleSelectAll}
                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                   />
@@ -360,7 +359,7 @@ const QueueManagement = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredItems.map((item) => (
+              {queueItems.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <input
@@ -445,9 +444,14 @@ const QueueManagement = () => {
             </tbody>
           </table>
         </div>
+        {queueMeta.total > 0 && (
+          <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+            <Pagination meta={queueMeta} onPageChange={setPage} />
+          </div>
+        )}
       </div>
 
-      {filteredItems.length === 0 && (
+      {(queueMeta.total ?? 0) === 0 && (
         <div className="text-center py-12 bg-white rounded-lg shadow">
           <FaClock className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun élément dans la file d'attente</h3>

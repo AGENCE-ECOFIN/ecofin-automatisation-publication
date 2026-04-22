@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from app.models.feed import Feed
 from app.schemas.feed import FeedCreate, FeedUpdate
 from app.services.audit_service import AuditService
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import feedparser
 from datetime import datetime
 from app.services.llm_service import LLMService
@@ -72,6 +72,17 @@ class FeedService:
         # if user_id:
         #     query = query.filter(Feed.created_by == user_id)
         return query.all()
+
+    def get_feeds_paginated(
+        self,
+        user_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> Tuple[List[Feed], int]:
+        query = self.db.query(Feed)
+        total = query.count()
+        items = query.order_by(Feed.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
 
     def get_feed_by_id(self, feed_id: int) -> Optional[Feed]:
         feed = self.db.query(Feed).filter(Feed.id == feed_id).first()

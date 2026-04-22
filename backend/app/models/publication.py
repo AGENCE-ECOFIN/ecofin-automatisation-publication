@@ -8,6 +8,7 @@ class Publication(Base):
     __tablename__ = "publications"
 
     id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)  # NULL pour certains enregistrements directs
     feed_id = Column(Integer, ForeignKey("feeds.id"), nullable=True)  # NULL pour posts directs
     network = Column(String, nullable=False)  # facebook, linkedin, x
     content = Column(Text, nullable=False)

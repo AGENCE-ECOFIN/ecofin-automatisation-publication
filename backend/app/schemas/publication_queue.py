@@ -38,3 +38,11 @@ class PublicationQueueResponse(PublicationQueueBase):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedPublicationQueueResponse(BaseModel):
+    items: List[PublicationQueueResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

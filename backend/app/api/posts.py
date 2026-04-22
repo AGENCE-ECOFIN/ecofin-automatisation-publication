@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Request, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest, PostRejectRequest
-from app.schemas.publication import PublicationResponse
+from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostValidate, NetworkValidationRequest, PostRejectRequest, PaginatedPostsResponse, PaginatedDirectPostsResponse, SourceHintsResponse
+from app.schemas.publication import PublicationResponse, PaginatedPublicationsResponse
 from app.services.post_service import PostService
 from app.api.dependencies import get_current_user, get_client_info
 from app.models.user import User
 from typing import List, Optional
+from datetime import date
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -23,60 +24,120 @@ def create_post(
     return post_service.create_post(post, user_id=current_user.id, ip_address=ip_address, user_agent=user_agent)
 
 
-@router.get("/drafts", response_model=List[PostResponse])
+@router.get("/drafts", response_model=PaginatedPostsResponse)
 def get_draft_posts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    created_date: Optional[date] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.get_posts(status="draft")
+    items, total = post_service.get_posts_paginated(
+        status="draft",
+        page=page,
+        page_size=page_size,
+        search=search,
+        source=source,
+        created_on=created_date,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
-@router.get("/validated", response_model=List[PostResponse])
+@router.get("/validated", response_model=PaginatedPostsResponse)
 def get_validated_posts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    created_date: Optional[date] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.get_posts(status="validated")
+    items, total = post_service.get_posts_paginated(
+        status="validated",
+        page=page,
+        page_size=page_size,
+        search=search,
+        source=source,
+        created_on=created_date,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
-@router.get("/queue", response_model=List[PostResponse])
+@router.get("/queue", response_model=PaginatedPostsResponse)
 def get_posts_queue(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.get_posts_queue()
+    items, total = post_service.get_posts_queue_paginated(page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
-@router.get("/rejected", response_model=List[PostResponse])
+@router.get("/rejected", response_model=PaginatedPostsResponse)
 def get_rejected_posts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
+    search: Optional[str] = None,
+    source: Optional[str] = None,
+    created_date: Optional[date] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.get_posts(status="rejected")
+    items, total = post_service.get_posts_paginated(
+        status="rejected",
+        page=page,
+        page_size=page_size,
+        search=search,
+        source=source,
+        created_on=created_date,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
-@router.get("/direct", response_model=List[dict])
+@router.get("/direct", response_model=PaginatedDirectPostsResponse)
 def get_direct_posts(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Récupérer les posts directs"""
     post_service = PostService(db)
-    return post_service.get_direct_posts()
+    items, total = post_service.get_direct_posts_paginated(page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
-@router.get("/history", response_model=List[PostResponse])
+@router.get("/history", response_model=PaginatedPostsResponse)
 def get_posts_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Récupère l'historique de tous les posts"""
     post_service = PostService(db)
-    return post_service.get_posts()
+    items, total = post_service.get_posts_paginated(page=page, page_size=page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
+
+
+@router.get("/meta/source-hints", response_model=SourceHintsResponse)
+def get_post_source_hints(
+    limit: int = Query(500, ge=1, le=2000),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Noms des flux RSS créés dans Flux (table feeds), pour le filtre Source."""
+    post_service = PostService(db)
+    sources = post_service.list_source_filter_hints(limit=limit)
+    return {"sources": sources}
 
 
 @router.get("/{post_id}", response_model=PostResponse)
@@ -221,14 +282,25 @@ def publish_post_now(
     return {"message": "Post programmé pour publication immédiate"}
 
 
-@router.get("/history/publications", response_model=List[PublicationResponse])
+@router.get("/history/publications", response_model=PaginatedPublicationsResponse)
 def get_publication_history(
-    limit: int = 100,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=500),
+    network: Optional[str] = None,
+    feed: Optional[str] = Query(None, description='Vide, "direct", ou identifiant numérique de flux'),
+    pub_status: Optional[str] = Query(None, description="PUBLISHED ou FAILED"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post_service = PostService(db)
-    return post_service.get_publication_history(limit)
+    items, total = post_service.get_publication_history_paginated(
+        page=page,
+        page_size=page_size,
+        network=network,
+        feed=feed,
+        pub_status=pub_status,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 
 @router.put("/{post_id}", response_model=PostResponse)

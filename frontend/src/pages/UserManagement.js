@@ -3,12 +3,14 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { FaPlus, FaEdit, FaTrash, FaUser, FaUserShield, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { usersService } from '../services/api';
+import { usersService, DEFAULT_PAGE_SIZE } from '../services/api';
 import Modal from '../components/Modal';
+import Pagination from '../components/Pagination';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 
 const UserManagement = () => {
+  const [page, setPage] = useState(1);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -30,14 +32,18 @@ const UserManagement = () => {
     is_admin: false
   });
 
-  // Récupérer la liste des utilisateurs
-  const { data: usersResponse, isLoading, error } = useQuery('users', usersService.getUsers);
+  const { data: usersResponse, isLoading, error } = useQuery(
+    ['users', page],
+    () => usersService.getUsers({ page, pageSize: DEFAULT_PAGE_SIZE }),
+    { keepPreviousData: true }
+  );
   const users = usersResponse?.data || [];
+  const usersMeta = usersResponse?.pagination || {};
 
   // Mutation pour créer un utilisateur
   const createUserMutation = useMutation(usersService.createUser, {
     onSuccess: () => {
-      queryClient.invalidateQueries('users');
+      queryClient.invalidateQueries(['users']);
       setShowCreateModal(false);
       setCreateForm({ username: '', email: '', password: '', is_admin: false });
     }
@@ -48,7 +54,7 @@ const UserManagement = () => {
     ({ id, data }) => usersService.updateUser(id, data),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('users');
+        queryClient.invalidateQueries(['users']);
         setShowEditModal(false);
         setSelectedUser(null);
       }
@@ -58,7 +64,7 @@ const UserManagement = () => {
   // Mutation pour supprimer un utilisateur
   const deleteUserMutation = useMutation(usersService.deleteUser, {
     onSuccess: () => {
-      queryClient.invalidateQueries('users');
+      queryClient.invalidateQueries(['users']);
     }
   });
 
@@ -127,7 +133,7 @@ const UserManagement = () => {
       {/* Liste des utilisateurs */}
       <div className="bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">Utilisateurs ({users.length})</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Utilisateurs ({usersMeta.total ?? users.length})</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -209,6 +215,7 @@ const UserManagement = () => {
             </tbody>
           </table>
         </div>
+        <Pagination meta={usersMeta} onPageChange={setPage} />
       </div>
 
       {/* Modal de création */}

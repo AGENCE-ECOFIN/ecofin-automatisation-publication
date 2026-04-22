@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta
@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, PaginatedUsersResponse
 from app.services.email_service import EmailService
 from pydantic import BaseModel, EmailStr
 
@@ -78,8 +78,10 @@ def create_user(
     
     return new_user
 
-@router.get("/", response_model=List[UserResponse])
+@router.get("/", response_model=PaginatedUsersResponse)
 def get_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -90,8 +92,10 @@ def get_users(
             detail="Seuls les administrateurs peuvent voir la liste des utilisateurs"
         )
     
-    users = db.query(User).all()
-    return users
+    query = db.query(User)
+    total = query.count()
+    items = query.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(

@@ -36,6 +36,14 @@ class UserResponse(UserBase):
         from_attributes = True
 
 
+class PaginatedUsersResponse(BaseModel):
+    items: list[UserResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str

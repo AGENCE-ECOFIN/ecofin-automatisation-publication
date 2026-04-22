@@ -1,35 +1,53 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
 from app.api.dependencies import get_current_user
 from app.models.user import User
 from app.models.publication_queue import PublicationQueue
-from app.schemas.publication_queue import PublicationQueueResponse, PublicationQueueUpdate
+from app.schemas.publication_queue import PublicationQueueResponse, PublicationQueueUpdate, PaginatedPublicationQueueResponse
 from app.services.publication_queue_service import PublicationQueueService
 
 router = APIRouter()
 
-@router.get("/", response_model=List[PublicationQueueResponse])
+@router.get("/", response_model=PaginatedPublicationQueueResponse)
 def get_publication_queue(
     status: Optional[str] = None,
     network: Optional[str] = None,
     feed_id: Optional[int] = None,
+    feed: Optional[str] = Query(
+        None,
+        description='Alternative à feed_id : "direct" (posts sans flux) ou identifiant numérique du flux',
+    ),
+    queue_filter: Optional[str] = Query(
+        None,
+        description="Statut file ou PAUSED pour les éléments en pause",
+    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Récupère la file d'attente de publication avec filtres optionnels"""
     queue_service = PublicationQueueService(db)
     filters = {}
-    if status:
-        filters['status'] = status
     if network:
-        filters['network'] = network
-    if feed_id:
-        filters['feed_id'] = feed_id
-    
-    queue_items = queue_service.get_queue_items(filters)
-    return queue_items
+        filters["network"] = network
+    if feed == "direct":
+        filters["feed_id_null"] = True
+    elif feed and feed.strip().isdigit():
+        filters["feed_id"] = int(feed)
+    elif feed_id is not None:
+        filters["feed_id"] = feed_id
+    if queue_filter == "PAUSED":
+        filters["is_paused"] = True
+    elif queue_filter:
+        filters["status"] = queue_filter
+    elif status:
+        filters["status"] = status
+
+    queue_items, total = queue_service.get_queue_items_paginated(filters, page=page, page_size=page_size)
+    return {"items": queue_items, "total": total, "page": page, "page_size": page_size, "total_pages": (total + page_size - 1) // page_size}
 
 @router.get("/{item_id}", response_model=PublicationQueueResponse)
 def get_queue_item(

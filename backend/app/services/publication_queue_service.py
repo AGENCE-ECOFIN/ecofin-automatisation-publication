@@ -3,7 +3,7 @@ from app.models.publication_queue import PublicationQueue
 from app.models.post import Post
 from app.models.feed import Feed
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 import json
 
 
@@ -136,19 +136,39 @@ class PublicationQueueService:
         
         return queue_items
 
+    def _apply_queue_filters(self, query, filters: Optional[Dict]):
+        if not filters:
+            return query
+        if filters.get("feed_id_null"):
+            query = query.filter(PublicationQueue.feed_id.is_(None))
+        elif filters.get("feed_id") is not None:
+            query = query.filter(PublicationQueue.feed_id == filters["feed_id"])
+        if filters.get("network"):
+            query = query.filter(PublicationQueue.network == filters["network"])
+        if filters.get("is_paused") is True:
+            query = query.filter(PublicationQueue.is_paused.is_(True))
+        elif filters.get("status"):
+            query = query.filter(PublicationQueue.status == filters["status"])
+        return query
+
     def get_queue_items(self, filters: Dict = None) -> List[PublicationQueue]:
         """Récupère les éléments de la file d'attente avec filtres optionnels"""
         query = self.db.query(PublicationQueue)
-        
-        if filters:
-            if filters.get('status'):
-                query = query.filter(PublicationQueue.status == filters['status'])
-            if filters.get('network'):
-                query = query.filter(PublicationQueue.network == filters['network'])
-            if filters.get('feed_id'):
-                query = query.filter(PublicationQueue.feed_id == filters['feed_id'])
-        
+        query = self._apply_queue_filters(query, filters)
         return query.order_by(PublicationQueue.created_at.desc()).all()
+
+    def get_queue_items_paginated(
+        self,
+        filters: Dict = None,
+        page: int = 1,
+        page_size: int = 50
+    ) -> Tuple[List[PublicationQueue], int]:
+        query = self.db.query(PublicationQueue)
+        query = self._apply_queue_filters(query, filters)
+
+        total = query.count()
+        items = query.order_by(PublicationQueue.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return items, total
 
     def get_queue_stats(self) -> Dict:
         """Récupère les statistiques de la file d'attente"""

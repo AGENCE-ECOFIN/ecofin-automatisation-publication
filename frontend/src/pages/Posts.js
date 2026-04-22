@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { FaTimes } from 'react-icons/fa';
-import { postsService } from '../services/api';
+import { postsService, DEFAULT_PAGE_SIZE } from '../services/api';
+import { log } from '../utils/logger';
 import PostFeedCard from '../components/PostFeedCard';
+import Pagination from '../components/Pagination';
 
 const Posts = () => {
   const [activeTab, setActiveTab] = useState('drafts');
+  const [pageDrafts, setPageDrafts] = useState(1);
+  const [pageValidated, setPageValidated] = useState(1);
+  const [pageRejected, setPageRejected] = useState(1);
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -16,30 +21,74 @@ const Posts = () => {
 
   const queryClient = useQueryClient();
 
-  // Queries
-  const { data: drafts, isLoading: draftsLoading, error: draftsError } = useQuery(
-    'drafts',
-    postsService.getDrafts,
-    { select: (response) => response.data || [] }
+  const { data: sourceHintsRes } = useQuery(
+    'posts-source-hints',
+    () => postsService.getSourceHints(),
+    { staleTime: 5 * 60 * 1000 }
+  );
+  const sourceSuggestions = sourceHintsRes?.data?.sources ?? [];
+
+  const listQueryOptions = {
+    search: searchTerm.trim() || undefined,
+    source: sourceFilter.trim() || undefined,
+    createdDate: dateFilter || undefined,
+  };
+
+  useEffect(() => {
+    setPageDrafts(1);
+    setPageValidated(1);
+    setPageRejected(1);
+  }, [searchTerm, sourceFilter, dateFilter]);
+
+  // Queries (pagination + filtres côté serveur)
+  const { data: draftQuery, isLoading: draftsLoading, error: draftsError } = useQuery(
+    ['drafts', pageDrafts, searchTerm, sourceFilter, dateFilter],
+    () =>
+      postsService.getDrafts({
+        page: pageDrafts,
+        pageSize: DEFAULT_PAGE_SIZE,
+        ...listQueryOptions,
+      }),
+    { select: (response) => ({ items: response.data || [], meta: response.pagination || {} }) }
   );
 
-  const { data: validated, isLoading: validatedLoading, error: validatedError } = useQuery(
-    'validated',
-    postsService.getValidated,
-    { select: (response) => response.data || [] }
+  const { data: validatedQuery, isLoading: validatedLoading, error: validatedError } = useQuery(
+    ['validated', pageValidated, searchTerm, sourceFilter, dateFilter],
+    () =>
+      postsService.getValidated({
+        page: pageValidated,
+        pageSize: DEFAULT_PAGE_SIZE,
+        ...listQueryOptions,
+      }),
+    { select: (response) => ({ items: response.data || [], meta: response.pagination || {} }) }
   );
 
-  const { data: rejected, isLoading: rejectedLoading, error: rejectedError } = useQuery(
-    'rejected',
-    postsService.getRejected,
-    { select: (response) => response.data || [] }
+  const { data: rejectedQuery, isLoading: rejectedLoading, error: rejectedError } = useQuery(
+    ['rejected', pageRejected, searchTerm, sourceFilter, dateFilter],
+    () =>
+      postsService.getRejected({
+        page: pageRejected,
+        pageSize: DEFAULT_PAGE_SIZE,
+        ...listQueryOptions,
+      }),
+    { select: (response) => ({ items: response.data || [], meta: response.pagination || {} }) }
   );
 
+  const safeDrafts = draftQuery?.items || [];
+  const safeValidated = validatedQuery?.items || [];
+  const safeRejected = rejectedQuery?.items || [];
+  const draftMeta = draftQuery?.meta || {};
+  const validatedMeta = validatedQuery?.meta || {};
+  const rejectedMeta = rejectedQuery?.meta || {};
 
-  // Safe data with fallbacks
-  const safeDrafts = drafts || [];
-  const safeValidated = validated || [];
-  const safeRejected = rejected || [];
+  const currentPaginationMeta =
+    activeTab === 'drafts' ? draftMeta : activeTab === 'validated' ? validatedMeta : rejectedMeta;
+
+  const handlePageChange = (p) => {
+    if (activeTab === 'drafts') setPageDrafts(p);
+    else if (activeTab === 'validated') setPageValidated(p);
+    else setPageRejected(p);
+  };
 
   const isLoading = draftsLoading || validatedLoading || rejectedLoading;
 
@@ -48,12 +97,12 @@ const Posts = () => {
     ({ id, data }) => postsService.updatePost(id, data),
     {
       onSuccess: (data) => {
-        console.log('✅ Post sauvegardé avec succès:', data);
-        queryClient.invalidateQueries('drafts');
+        log.debug('Posts', 'Post sauvegardé', { id: data?.data?.id });
+        queryClient.invalidateQueries(['drafts']);
         setIsModalOpen(false);
       },
       onError: (error) => {
-        console.error('❌ Erreur lors de la sauvegarde:', error);
+        log.error('Posts', 'Sauvegarde post', { message: error?.message });
       }
     }
   );
@@ -61,69 +110,62 @@ const Posts = () => {
   // Mutations pour la validation granulaire
   const validateNetworkMutation = useMutation(
     ({ postId, network }) => {
-      console.log('🔧 Validation du réseau:', { postId, network });
+      log.debug('Posts', 'Validation réseau', { postId, network });
       return postsService.validateNetwork(postId, network);
     },
     {
       onSuccess: (data) => {
-        console.log('✅ Réseau validé avec succès:', data);
+        log.debug('Posts', 'Réseau validé', { postId: data?.data?.id });
         // Forcer le rechargement des données
-        queryClient.invalidateQueries('drafts');
-        queryClient.invalidateQueries('validated');
-        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries(['drafts']);
+        queryClient.invalidateQueries(['validated']);
+        queryClient.invalidateQueries(['rejected']);
         queryClient.invalidateQueries('queue');
-        // Forcer le refetch pour mettre à jour l'interface
-        queryClient.refetchQueries('drafts');
+        queryClient.refetchQueries(['drafts']);
       },
       onError: (error) => {
-        console.error('❌ Erreur lors de la validation du réseau:', error);
+        log.error('Posts', 'Validation réseau', { message: error?.message });
       }
     }
   );
 
   const rejectNetworkMutation = useMutation(
     ({ postId, network, rejectionReason }) => {
-      console.log('🔧 Appel API rejet:', { postId, network, rejectionReason });
+      log.debug('Posts', 'Rejet réseau', { postId, network });
       return postsService.rejectNetwork(postId, network, rejectionReason);
     },
     {
       onSuccess: (data) => {
-        console.log('✅ Réseau rejeté avec succès:', data);
+        log.debug('Posts', 'Réseau rejeté', { postId: data?.data?.id });
         // Forcer le rechargement des données
-        queryClient.invalidateQueries('drafts');
-        queryClient.invalidateQueries('validated');
-        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries(['drafts']);
+        queryClient.invalidateQueries(['validated']);
+        queryClient.invalidateQueries(['rejected']);
         queryClient.invalidateQueries('queue');
-        // Forcer le refetch pour mettre à jour l'interface
-        queryClient.refetchQueries('drafts');
+        queryClient.refetchQueries(['drafts']);
       },
       onError: (error) => {
-        console.error('❌ Erreur lors du rejet du réseau:', error);
+        log.error('Posts', 'Rejet réseau', { message: error?.message });
       }
     }
   );
 
   const restoreNetworkMutation = useMutation(
     ({ postId, network }) => {
-      console.log('🔧 [FRONTEND] Appel API restauration:', { postId, network });
+      log.debug('Posts', 'Restauration réseau', { postId, network });
       return postsService.restoreNetwork(postId, network);
     },
     {
       onSuccess: (data) => {
-        console.log('✅ [FRONTEND] Réseau restauré avec succès:', data);
-        console.log('🔄 [FRONTEND] Invalidation des queries...');
-        // Forcer le rechargement des données
-        queryClient.invalidateQueries('drafts');
-        queryClient.invalidateQueries('validated');
-        queryClient.invalidateQueries('rejected');
+        log.debug('Posts', 'Réseau restauré', { postId: data?.data?.id });
+        queryClient.invalidateQueries(['drafts']);
+        queryClient.invalidateQueries(['validated']);
+        queryClient.invalidateQueries(['rejected']);
         queryClient.invalidateQueries('queue');
-        console.log('🔄 [FRONTEND] Refetch des queries...');
-        // Forcer le refetch pour mettre à jour l'interface
-        queryClient.refetchQueries('drafts');
-        console.log('✅ [FRONTEND] Queries invalidées et refetchées');
+        queryClient.refetchQueries(['drafts']);
       },
       onError: (error) => {
-        console.error('❌ [FRONTEND] Erreur lors de la restauration du réseau:', error);
+        log.error('Posts', 'Restauration réseau', { message: error?.message });
       }
     }
   );
@@ -131,22 +173,22 @@ const Posts = () => {
   // Mutation pour le rejet global d'un post
   const rejectPostMutation = useMutation(
     ({ postId, rejectionReason }) => {
-      console.log('🔧 [FRONTEND] Rejet global du post:', { postId, rejectionReason });
+      log.debug('Posts', 'Rejet global post', { postId });
       return postsService.rejectPost(postId, rejectionReason);
     },
     {
       onSuccess: (data) => {
-        console.log('✅ [FRONTEND] Post rejeté globalement avec succès:', data);
+        log.debug('Posts', 'Post rejeté globalement', { postId: data?.data?.id });
         // Forcer le rechargement des données
-        queryClient.invalidateQueries('drafts');
-        queryClient.invalidateQueries('validated');
-        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries(['drafts']);
+        queryClient.invalidateQueries(['validated']);
+        queryClient.invalidateQueries(['rejected']);
         queryClient.invalidateQueries('queue');
-        queryClient.refetchQueries('drafts');
+        queryClient.refetchQueries(['drafts']);
         alert('Post rejeté globalement avec succès (tous les réseaux rejetés et retirés de la queue)');
       },
       onError: (error) => {
-        console.error('❌ [FRONTEND] Erreur lors du rejet global:', error);
+        log.error('Posts', 'Rejet global', { message: error?.message });
         alert('Erreur lors du rejet global: ' + (error.response?.data?.detail || error.message));
       }
     }
@@ -155,23 +197,23 @@ const Posts = () => {
   // Mutation pour la restauration globale d'un post
   const restorePostMutation = useMutation(
     (postId) => {
-      console.log('🔧 [FRONTEND] Restauration globale du post:', { postId });
+      log.debug('Posts', 'Restauration globale', { postId });
       return postsService.restorePost(postId);
     },
     {
       onSuccess: (data) => {
-        console.log('✅ [FRONTEND] Post restauré globalement avec succès:', data);
+        log.debug('Posts', 'Post restauré globalement', { postId: data?.data?.id });
         // Forcer le rechargement des données
-        queryClient.invalidateQueries('drafts');
-        queryClient.invalidateQueries('validated');
-        queryClient.invalidateQueries('rejected');
+        queryClient.invalidateQueries(['drafts']);
+        queryClient.invalidateQueries(['validated']);
+        queryClient.invalidateQueries(['rejected']);
         queryClient.invalidateQueries('queue');
-        queryClient.refetchQueries('drafts');
-        queryClient.refetchQueries('rejected');
+        queryClient.refetchQueries(['drafts']);
+        queryClient.refetchQueries(['rejected']);
         alert('Post restauré globalement avec succès (tous les réseaux rejetés restaurés en brouillon)');
       },
       onError: (error) => {
-        console.error('❌ [FRONTEND] Erreur lors de la restauration globale:', error);
+        log.error('Posts', 'Restauration globale', { message: error?.message });
         alert('Erreur lors de la restauration globale: ' + (error.response?.data?.detail || error.message));
       }
     }
@@ -214,12 +256,10 @@ const Posts = () => {
   };
 
   const handleRejectNetwork = (postId, network, rejectionReason) => {
-    console.log('🔧 Rejet du réseau:', { postId, network, rejectionReason });
     rejectNetworkMutation.mutate({ postId, network, rejectionReason });
   };
 
   const handleRestoreNetwork = (postId, network) => {
-    console.log('🔧 Restauration du réseau:', { postId, network });
     // Créer une mutation spécifique pour la restauration
     restoreNetworkMutation.mutate({ postId, network });
   };
@@ -242,65 +282,10 @@ const Posts = () => {
 
   // Pas besoin de séparer par réseau, on garde les posts groupés par feed
 
-  // Fonction de filtrage
-  const filterPosts = (posts) => {
-    return posts.filter(post => {
-      // Filtre par terme de recherche
-      if (searchTerm && !post.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-          !post.content.toLowerCase().includes(searchTerm.toLowerCase())) {
-        return false;
-      }
-      
-      // Filtre par source
-      if (sourceFilter && post.source_url && !post.source_url.includes(sourceFilter)) {
-        return false;
-      }
-      
-      // Filtre par date
-      if (dateFilter) {
-        const postDate = new Date(post.created_at);
-        const filterDate = new Date(dateFilter);
-        if (postDate.toDateString() !== filterDate.toDateString()) {
-          return false;
-        }
-      }
-      
-      return true;
-    });
-  };
-
   const getCurrentPosts = () => {
-    let posts = [];
-    
-    if (activeTab === 'drafts') {
-      posts = safeDrafts;
-    } else if (activeTab === 'validated') {
-      // Utiliser les posts validés de l'API
-      console.log('🔍 [VALIDATED TAB] Utilisation des posts validés de l\'API...');
-      console.log('🔍 [VALIDATED TAB] safeValidated:', safeValidated.length, 'posts');
-      posts = safeValidated;
-    } else if (activeTab === 'rejected') {
-      posts = safeRejected;
-    }
-    
-    const filteredPosts = filterPosts(posts);
-    return filteredPosts;
-  };
-
-  // Obtenir les sources uniques pour le filtre
-  const getUniqueSources = () => {
-    const allPosts = [...safeDrafts, ...safeValidated, ...safeRejected];
-    const sources = [...new Set(allPosts.map(post => {
-      if (post.source_url) {
-        try {
-          return new URL(post.source_url).hostname;
-        } catch {
-          return post.source_url;
-        }
-      }
-      return post.feed?.name || 'Inconnu';
-    }))];
-    return sources.filter(Boolean);
+    if (activeTab === 'drafts') return safeDrafts;
+    if (activeTab === 'validated') return safeValidated;
+    return safeRejected;
   };
 
   return (
@@ -317,9 +302,9 @@ const Posts = () => {
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
               {[
-                { id: 'drafts', label: 'Brouillons', count: safeDrafts.length },
-                { id: 'validated', label: 'Validés', count: safeValidated.length },
-                { id: 'rejected', label: 'Rejetés', count: safeRejected.length }
+                { id: 'drafts', label: 'Brouillons', count: draftMeta.total ?? safeDrafts.length },
+                { id: 'validated', label: 'Validés', count: validatedMeta.total ?? safeValidated.length },
+                { id: 'rejected', label: 'Rejetés', count: rejectedMeta.total ?? safeRejected.length }
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -355,18 +340,22 @@ const Posts = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Source
             </label>
-            <select
+            <input
+              type="text"
               value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
+              list="posts-source-hints-list"
+              placeholder="Choisir ou saisir un nom de flux RSS"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            >
-              <option value="">Toutes les sources</option>
-              {getUniqueSources().map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
+            />
+            <datalist id="posts-source-hints-list">
+              {sourceSuggestions.map((s) => (
+                <option key={s} value={s} />
               ))}
-            </select>
+            </datalist>
+            <p className="mt-1 text-xs text-gray-500">
+              Liste des flux créés dans Flux ; le filtre porte sur l&apos;URL source ou le nom du flux.
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -431,6 +420,10 @@ const Posts = () => {
               />
             ))}
           </div>
+        )}
+
+        {!isLoading && !draftsError && !validatedError && !rejectedError && getCurrentPosts().length > 0 && (
+          <Pagination meta={currentPaginationMeta} onPageChange={handlePageChange} />
         )}
 
         {/* Modal */}
